@@ -31,13 +31,14 @@ def test_data_dealer():
     data_loader.parse_data(file_path)
     model_path = '/data1/nzw/model/bart-base-chinese/'
     my_tknzr = MyTokenizer.from_pretrained(model_path)
-    my_tknzr.add_special_tokens(data_loader.new_tokens)
+    my_tknzr.add_special_tokens(data_loader.new_tokens_bundle)
     
     data_dealer = DataDealer(data_loader, my_tknzr)
     sent = data_loader.sentences[0]
     sent = [
         {'word':'感','tag':'o'},{'word':'动','tag':'o'},
-        {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'}]
+        {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'},
+        {'word':'人','tag':'b-per.nam'},{'word':'物','tag':'i-per.nam'}]
     res = data_dealer.get_hier_sent(sent)
     print(res)
     for s, t in zip(res[0], res[2]):
@@ -46,6 +47,8 @@ def test_data_dealer():
     for s, t in zip(res[1], res[3]):
         print(s)
         print(t)
+    ents = data_dealer.get_targ_ent(res[2][-1])
+    print(ents)
 
 if __name__ == '__main__':
     # test_data_pipe()

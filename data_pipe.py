@@ -10,10 +10,22 @@ class DataLoader:
         self.ent_end_tok = ent_end_tok
     
     def parse_data(self, filename):
-        '''解析训练数据'''
+        '''
+        解析训练数据
+        sentences: [
+            [
+                {'word':'感','tag':'o'},{'word':'动','tag':'o'},
+                {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'}
+            ]
+        ]
+        new_tokens_bundle: [
+            ['[b-loc.nam-s]', '[b-loc.nam-e]', 'ent_end'],
+            ['[b-loc.nam-s]'],
+            ['[b-loc.nam-e]', 'ent_end']
+        ]
+        '''
         self.sentences = self.parse_CoNLL_file(filename)
-        self.class_dic, self.new_tokens = self.parse_label()
-        self.sentence_bundle, self.target_bundle = self.hier_data()
+        self.new_tokens_bundle = self.parse_label()
 
     def parse_CoNLL_file(self, filename):
         '''
@@ -57,15 +69,21 @@ class DataLoader:
             lab: [f'[[{lab}-s]]', f'[[{lab}-e]]'] for lab in classes
         }
         new_tokens = []
+        start_tokens = []
+        end_tokens = []
         for _, v in class_dic.items():
             new_tokens += v
+            start_tokens.append(v[0])
+            end_tokens.append(v[1])
         new_tokens.append(self.ent_end_tok)
-        
-        return class_dic, new_tokens
+        end_tokens.append(self.ent_end_tok)
+
+        return new_tokens, start_tokens, end_tokens
 
 class MyTokenizer(BertTokenizer):
-    def add_special_tokens(self, new_tokens):
-        '''将解码序列中要用到的特殊标记添加到分词器中'''        
+    def add_special_tokens(self, new_tokens_bundle):
+        '''将解码序列中要用到的特殊标记添加到分词器中''' 
+        new_tokens, start_tokens, end_tokens = new_tokens_bundle
         self.unique_no_split_tokens += new_tokens
         self.add_tokens(new_tokens)
 
@@ -74,8 +92,15 @@ class MyTokenizer(BertTokenizer):
         for tok in new_tokens:
             dic_cls_id[tok] = self.convert_tokens_to_ids(tok)
             dic_cls_order[tok] = len(dic_cls_order)
+        dic_cls_pos = {k:v+2 for k,v in dic_cls_order.items()}
+        dic_start_pos_cls = {dic_cls_pos[k] for k in start_tokens}
+        dic_end_pos_cls = {dic_cls_pos[k] for k in end_tokens}
+        
         self.dic_cls_id = dic_cls_id
         self.dic_cls_order = dic_cls_order
+        self.dic_cls_pos = dic_cls_pos
+        self.dic_start_pos_cls = dic_start_pos_cls
+        self.dic_end_pos_cls = dic_end_pos_cls
         
 class DataDealer:
     def __init__(
@@ -136,9 +161,8 @@ class DataDealer:
         '''
         last_w = {'word':'', 'tag':'o'}
         ent_end_tok = self.ent_end_tok
-        dic_cls_order = self.tokenizer.dic_cls_order     
-        word_shift = len(dic_cls_order) + 2
-        dic_cls_pos = {k:v+2 for k,v in dic_cls_order.items()}
+        dic_cls_pos = self.tokenizer.dic_cls_pos     
+        word_shift = len(dic_cls_pos) + 2
         for i,s in enumerate(sent):
             s['pos'] = i + word_shift
         
@@ -154,7 +178,7 @@ class DataDealer:
             if w['tag'].startswith('b-'):
                 word = '[[{}-s]]'.format(w['tag'][2:])
                 sent1.append({
-                    'word':word,'tag':'','pos':dic_cls_pos[word]
+                    'word':word,'tag':'begin','pos':dic_cls_pos[word]
                 })
                 targ1 = targ1[:-1]
                 targ1.append(sent1[-1])
@@ -173,8 +197,8 @@ class DataDealer:
         sent = sent + [last_w]
         targ_sent = sent[1:] + [last_w]
         w_ = {'word':'', 'tag':''}
-        for w, w_tar in zip(sent, targ_sent):
-            if w['tag']=='o' and w_['tag'][:2] in ['i-', 'b-']:  
+        for w, w_tar in zip(sent, targ_sent): 
+            if w['tag'] in ['o','begin'] and w_['tag'][:2] in ['i-','b-']:  
                 # 添加实体结束标记
                 sent1.append({
                     'word':ent_end_tok,'tag':'','pos':dic_cls_pos[ent_end_tok]
@@ -210,8 +234,38 @@ class DataDealer:
 
         return sent_bund, targ_bund, sent_pos_bund, targ_pos_bund
 
-    def get_targ_ent(self, sent):
+    def get_targ_ent(self, pos_list):
         '''得到序列中的实体'''
+        i, N = 0, len(pos_list)
+        rotate_pos_cls = []
+        rotate_pos_cls.append(self.tokenizer.dic_start_pos_cls)
+        rotate_pos_cls.append(self.tokenizer.dic_end_pos_cls)
+
+        ents = []
+        while i<N:
+            # 碰到实体开始符
+            if pos_list[i] in rotate_pos_cls[0]:
+                ent = [pos_list[i]]
+                i += 1
+                while i<N:
+                    ent.append(pos_list[i])
+                    # 碰到实体结束符
+                    if pos_list[i] in rotate_pos_cls[1]:
+                        i += 1
+                        while i<N:
+                            if pos_list[i] in rotate_pos_cls[1]:
+                                ent.append(pos_list[i])
+                            else:
+                                break
+                            i += 1
+                        break
+                    i += 1
+                ents.append(ent)
+            else:
+                i += 1
+        return ents
+
+
 
 
 
