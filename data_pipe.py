@@ -126,10 +126,19 @@ class DataDealer:
         targ_bund_ids = [self.convert_tokens_to_ids(tks) for tks in targ_bund]
         sent_pos_bund = [[0]+pos+[1] for pos in sent_pos_bund]
         targ_pos_bund = [[0]+pos+[1] for pos in targ_pos_bund]
-        
+        targ_ents = self.get_targ_ents(sent_pos_bund[-1])
+
         return {
-            'chars':sent,'sent_ids':sent_bund_ids,'targ_ids':targ_bund_ids,
+            'chars':sent_bund[-1],'sent_bund_ids':sent_bund_ids,'targ_bund_ids':targ_bund_ids,
+            'sent_pos_bund': sent_pos_bund, 'targ_pos_bund': targ_pos_bund,
+            'targ_ents': targ_ents
         }
+
+        # return {
+        #     'chars':sent,'sent_bund_ids':sent_bund_ids,'targ_bund_ids':targ_bund_ids,
+        #     'sent_pos_bund': sent_pos_bund, 'targ_pos_bund': targ_pos_bund,
+        #     'targ_ents': targ_ents
+        # }
 
     def get_hier_sent(self, sent):
         '''
@@ -197,13 +206,14 @@ class DataDealer:
         sent = sent + [last_w]
         targ_sent = sent[1:] + [last_w]
         w_ = {'word':'', 'tag':''}
-        for w, w_tar in zip(sent, targ_sent): 
+        # print('209', sent)
+        for w, w_tar in zip(sent, targ_sent):
             if w['tag'] in ['o','begin'] and w_['tag'][:2] in ['i-','b-']:  
                 # 添加实体结束标记
                 sent1.append({
                     'word':ent_end_tok,'tag':'','pos':dic_cls_pos[ent_end_tok]
                 })
-                targ1 = targ1[:-1]
+                if w['word']: targ1 = targ1[:-1]
                 targ1.append(sent1[-1])
                 # 添加实体类别结束标记
                 word = '[[{}-e]]'.format(w_['tag'][2:])
@@ -213,7 +223,7 @@ class DataDealer:
                 sent2.append({
                     'word':word,'tag':'','pos':dic_cls_pos[word]
                 })
-                targ2 = targ2[:-1]
+                if w['word']: targ2 = targ2[:-1]
                 targ2.append(sent2[-2])
                 targ2.append(sent2[-1])
             if w_tar['word']:
@@ -231,10 +241,14 @@ class DataDealer:
         targ_pos_bund.append([x['pos'] for x in targ1])
         sent_pos_bund.append([x['pos'] for x in sent2])
         targ_pos_bund.append([x['pos'] for x in targ2])
-
+        for i, (sent, targ, sent_pos, targ_pos) in enumerate(zip(
+            sent_bund, targ_bund, sent_pos_bund, targ_pos_bund)):
+            if targ[0] not in dic_cls_pos:
+                targ_bund[i] = [sent[0]] + targ
+                targ_pos_bund[i] = [sent_pos[0]] + targ_pos
         return sent_bund, targ_bund, sent_pos_bund, targ_pos_bund
 
-    def get_targ_ent(self, pos_list):
+    def get_targ_ents(self, pos_list):
         '''得到序列中的实体'''
         i, N = 0, len(pos_list)
         rotate_pos_cls = []
