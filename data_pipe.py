@@ -4,8 +4,7 @@ from transformers import BertTokenizer
 
 class DataLoader:
     '''
-    将标记数据转化为训练需要的输入序列束和目标序列束
-    不涉及三个数据集的划分与tokenizer
+    读取数据集，解析标签类别
     '''
     def __init__(self, ent_end_tok='[ent_end]'):
         self.ent_end_tok = ent_end_tok
@@ -63,67 +62,6 @@ class DataLoader:
         new_tokens.append(self.ent_end_tok)
         
         return class_dic, new_tokens
-
-    def hier_data(self):
-        '''
-        生成按层次标记的输入文本和目标文本
-        '''
-        sentence_bundle = []
-        target_bundle = []
-        last_w = {'word':'', 'tag':''}
-        ent_end_tok = self.ent_end_tok
-        for sent in self.sentences:
-            sent_bund = [s['word'] for s in sent]
-            targ_bund = []
-            sent1 = []
-            targ1 = []
-            targ_sent = sent[1:] + [last_w]
-            for w, w_tar in zip(sent, targ_sent):
-                if w['tag'].startswith('b-'):
-                    word = '[{}-s]'.format(w['tag'][2:])
-                    sent1.append({'word':word,'tag':''})
-                    targ1 = targ1[:-1]
-                    targ1.append(word)
-                if w_tar['word']:
-                    targ1.append(w_tar['word'])
-                sent1.append(w)
-            sent_bund.append([s['word'] for s in sent1])
-            targ_bund.append(targ1)
-
-            sent = sent1
-            sent1, sent2 = [], []
-            targ1, targ2 = [], []
-            targ_sent = sent[1:] + [last_w]
-            w_ = {'word':'', 'tag':''}
-            for w, w_tar in zip(sent, targ_sent):
-                if w['tag']=='o' and w_['tag'][:2] in ['i-', 'b-']:  
-                    # 添加实体结束标记
-                    sent1.append({'word':ent_end_tok,'tag':''})
-                    targ1 = targ1[:-1]
-                    targ1.append(ent_end_tok)
-                    # 添加实体类别结束标记
-                    word = '[{}-e]'.format(w_['tag'][2:])
-                    sent2.append({'word':ent_end_tok,'tag':''})
-                    sent2.append({'word':word,'tag':''})
-                    targ2 = targ2[:-1]
-                    targ2.append(ent_end_tok)
-                    targ2.append(word)
-                if w_tar['word']:
-                    targ1.append(w_tar['word'])
-                    targ2.append(w_tar['word'])
-                sent1.append(w)
-                sent2.append(w)
-                w_ = w
-            sent_bund.append([s['word'] for s in sent1])
-            sent_bund.append([s['word'] for s in sent2])
-            targ_bund.append(targ1)
-            targ_bund.append(targ2)
-
-            sentence_bundle.append(sent_bund)
-            target_bundle.append(targ_bund)
-
-        return sentence_bundle, target_bundle
-
 
 class MyTokenizer(BertTokenizer):
     def add_special_tokens(self, new_tokens):
