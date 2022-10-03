@@ -1,8 +1,7 @@
 
-import enum
 from transformers import BertTokenizer
 
-class DataLoader:
+class DataReader:
     '''
     读取数据集，解析标签类别
     '''
@@ -31,11 +30,12 @@ class DataLoader:
         '''
         加载CoNLL格式的数据集
         sentences: [
-            [{'word':w1, 'tag':t1}, {...}, ...], 
-            [...]
+            [
+                {'word':'感','tag':'o'},{'word':'动','tag':'o'},
+                {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'}
+            ]
         ]
         '''
-        # 
         sentences = [] 
         fp = open(filename, 'r')
         lines = fp.readlines()
@@ -104,10 +104,8 @@ class MyTokenizer(BertTokenizer):
         
 class DataDealer:
     def __init__(
-        self, data_loader, tokenizer,
-        ent_end_tok='[ent_end]'
+        self, tokenizer, ent_end_tok='[ent_end]'
     ):
-        self.data_loader = data_loader
         self.tokenizer = tokenizer
         self.ent_end_tok = ent_end_tok
     
@@ -118,19 +116,29 @@ class DataDealer:
         ids += [token_to_id(w) for w in token_list]
         ids += [self.tokenizer.eos_token_id]
         return ids
-
+    
     def get_one_sample(self, sent):
         '''生成一个样本的输入数据和目标数据'''
         sent_bund, targ_bund, sent_pos_bund, targ_pos_bund = self.get_hier_sent(sent)
-        sent_bund_ids = [self.convert_tokens_to_ids(tks) for tks in sent_bund]
-        targ_bund_ids = [self.convert_tokens_to_ids(tks) for tks in targ_bund]
+        bos_token = self.tokenizer.bos_token
+        eos_token = self.tokenizer.eos_token
+        sent_bund = [[bos_token]+sent+[eos_token] for sent in sent_bund]
+        targ_bund = [[bos_token]+targ+[eos_token] for targ in targ_bund]
+        tokens_to_ids = self.tokenizer.convert_tokens_to_ids
+        sent_ids_bund = [tokens_to_ids(tks) for tks in sent_bund]
+        targ_ids_bund = [tokens_to_ids(tks) for tks in targ_bund]
         sent_pos_bund = [[0]+pos+[1] for pos in sent_pos_bund]
         targ_pos_bund = [[0]+pos+[1] for pos in targ_pos_bund]
         targ_ents = self.get_targ_ents(sent_pos_bund[-1])
-
+        dec_src_ids, dec_targ_pos = self.get_dec_src_tar(
+            sent_bund, targ_bund,
+            sent_ids_bund, sent_pos_bund, 
+            targ_ids_bund, targ_pos_bund)
         return {
-            'chars':sent_bund[-1],'sent_bund_ids':sent_bund_ids,'targ_bund_ids':targ_bund_ids,
-            'sent_pos_bund': sent_pos_bund, 'targ_pos_bund': targ_pos_bund,
+            'raw_chars': sent_bund[0],
+            'enc_src_ids': sent_ids_bund[0],
+            'dec_src_ids': dec_src_ids,
+            'dec_targ_pos': dec_targ_pos,
             'targ_ents': targ_ents
         }
 
@@ -248,6 +256,41 @@ class DataDealer:
                 targ_pos_bund[i] = [sent_pos[0]] + targ_pos
         return sent_bund, targ_bund, sent_pos_bund, targ_pos_bund
 
+    def get_dec_src_tar(
+        self, sent_bund, targ_bund,
+        sent_ids_bund, sent_pos_bund, 
+        targ_ids_bund, targ_pos_bund):
+        '''
+        得到解码器输入和目标的token、id、pos列表
+        实际上有用的只有sent的ids和targ的pos
+        '''
+        dec_src_toks = []
+        dec_targ_toks = []
+        dec_src_ids = []
+        dec_src_pos = []
+        dec_targ_ids = []
+        dec_targ_pos = []
+        print('278')
+        for i in range(len(targ_pos_bund)):
+            sent_toks = sent_bund[i]
+            sent_ids = sent_ids_bund[i]
+            sent_pos = sent_pos_bund[i]
+            targ_toks = targ_bund[i]
+            targ_ids = targ_ids_bund[i]
+            targ_pos = targ_pos_bund[i]
+            # 目标序列的最后一位一定要是[SEP]
+            dec_src_toks.append(sent_toks[:len(targ_pos)-1])
+            dec_src_ids.append(sent_ids[:len(targ_pos)-1])
+            dec_src_pos.append(sent_pos[:len(targ_pos)-1])
+            dec_targ_toks.append(targ_toks[1:])
+            dec_targ_ids.append(targ_ids[1:])
+            dec_targ_pos.append(targ_pos[1:])
+            print(dec_src_toks[-1])
+            print(dec_targ_toks[-1])
+            print(dec_src_ids[-1], dec_targ_ids[-1])
+            
+        return dec_src_ids, dec_targ_pos
+
     def get_targ_ents(self, pos_list):
         '''得到序列中的实体'''
         i, N = 0, len(pos_list)
@@ -279,7 +322,36 @@ class DataDealer:
                 i += 1
         return ents
 
-
+def padding(data, padding_value, dim=2):
+    '''
+    pad data to maximum length
+    data: list(list), unpadded data
+    padding_value: int, filled value
+    dim: int, dimension of padded data
+        dim=2, result=(batch_size, sen_len)
+        dim=3, result=(batch_size, sen_len, word_len)
+    '''
+    sen_len = max([len(d) for d in data])
+    if dim == 2:
+        padded_data = [d + [padding_value] * (sen_len-len(d)) for d in data]
+        padded_mask = [[1] * len(d) + [0] * (sen_len-len(d)) for d in data]
+        return padded_data, padded_mask
+    elif dim == 3:
+        word_len = max([max([len(dd) for dd in d]) for d in data])
+        padded_data = []
+        padded_mask = []
+        for d in data:
+            padded_data.append([])
+            padded_mask.append([])
+            for dd in d:
+                padded_data[-1].append(dd + [padding_value] * (word_len-len(dd)))
+                padded_mask[-1].append([1] * len(dd) + [0] * (word_len-len(dd)))
+            for _ in range(sen_len - len(d)):
+                padded_data[-1].append([padding_value] * word_len)
+                padded_mask[-1].append([0] * word_len)
+        return padded_data, padded_mask
+    else:
+        raise NotImplementedError("Dimension %d not supported! Legal option: 2 or 3." % dim)
 
 
 
