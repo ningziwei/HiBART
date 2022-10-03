@@ -1,84 +1,64 @@
 
 from transformers import BertTokenizer
 
-class DataReader:
+def parse_CoNLL_file(filename):
     '''
-    读取数据集，解析标签类别
+    加载CoNLL格式的数据集
+    sentences: [
+        [
+            {'word':'感','tag':'o'},{'word':'动','tag':'o'},
+            {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'}
+        ]
+    ]
     '''
-    def __init__(self, ent_end_tok='[ent_end]'):
-        self.ent_end_tok = ent_end_tok
-    
-    def parse_data(self, filename):
-        '''
-        解析训练数据
-        sentences: [
-            [
-                {'word':'感','tag':'o'},{'word':'动','tag':'o'},
-                {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'}
-            ]
-        ]
-        new_tokens_bundle: [
-            ['[b-loc.nam-s]', '[b-loc.nam-e]', 'ent_end'],
-            ['[b-loc.nam-s]'],
-            ['[b-loc.nam-e]', 'ent_end']
-        ]
-        '''
-        self.sentences = self.parse_CoNLL_file(filename)
-        self.new_tokens_bundle = self.parse_label()
+    sentences = [] 
+    fp = open(filename, 'r')
+    lines = fp.readlines()
+    fp.close()
+    for line in lines:
+        line = line.strip()
+        if not line:
+            if not sentences or len(sentences[-1]):
+                sentences.append([])
+            continue
+        line_strlist = line.split()
+        if line_strlist[0] != "-DOCSTART-":
+            word = line_strlist[0]
+            tag = line_strlist[-1].lower()
+            sentences[-1].append({'word':word, 'tag':tag})
+    if not sentences[-1]:
+        sentences.pop()
+    return sentences
 
-    def parse_CoNLL_file(self, filename):
-        '''
-        加载CoNLL格式的数据集
-        sentences: [
-            [
-                {'word':'感','tag':'o'},{'word':'动','tag':'o'},
-                {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'}
-            ]
-        ]
-        '''
-        sentences = [] 
-        fp = open(filename, 'r')
-        lines = fp.readlines()
-        fp.close()
-        for line in lines:
-            line = line.strip()
-            if not line:
-                if not sentences or len(sentences[-1]):
-                    sentences.append([])
-                continue
-            line_strlist = line.split()
-            if line_strlist[0] != "-DOCSTART-":
-                word = line_strlist[0]
-                tag = line_strlist[-1].lower()
-                sentences[-1].append({'word':word, 'tag':tag})
-        if not sentences[-1]:
-            sentences.pop()
-        return sentences
+def parse_label(sentences, ent_end_tok='[ent_end]'):
+    '''
+    得到实体抽取数据集的所有标签和实体类别
+    new_tokens_bundle: [
+        ['[b-loc.nam-s]', '[b-loc.nam-e]', 'ent_end'],
+        ['[b-loc.nam-s]'],
+        ['[b-loc.nam-e]', 'ent_end']
+    ]
+    '''
+    label_dic = {}
+    for sent in sentences:
+        for s in sent:
+            label_dic[s['tag']] = True
+    classes = [
+        lab[2:] for lab in label_dic if '-' in lab]
+    class_dic = {
+        lab: [f'[[{lab}-s]]', f'[[{lab}-e]]'] for lab in classes
+    }
+    new_tokens = []
+    start_tokens = []
+    end_tokens = []
+    for _, v in class_dic.items():
+        new_tokens += v
+        start_tokens.append(v[0])
+        end_tokens.append(v[1])
+    new_tokens.append(ent_end_tok)
+    end_tokens.append(ent_end_tok)
 
-    def parse_label(self):
-        '''
-        得到实体抽取数据集的所有标签和实体类别
-        '''
-        label_dic = {}
-        for sent in self.sentences:
-            for s in sent:
-                label_dic[s['tag']] = True
-        classes = [
-            lab[2:] for lab in label_dic if '-' in lab]
-        class_dic = {
-            lab: [f'[[{lab}-s]]', f'[[{lab}-e]]'] for lab in classes
-        }
-        new_tokens = []
-        start_tokens = []
-        end_tokens = []
-        for _, v in class_dic.items():
-            new_tokens += v
-            start_tokens.append(v[0])
-            end_tokens.append(v[1])
-        new_tokens.append(self.ent_end_tok)
-        end_tokens.append(self.ent_end_tok)
-
-        return new_tokens, start_tokens, end_tokens
+    return new_tokens, start_tokens, end_tokens
 
 class MyTokenizer(BertTokenizer):
     def add_special_tokens(self, new_tokens_bundle):
@@ -108,28 +88,52 @@ class DataDealer:
     ):
         self.tokenizer = tokenizer
         self.ent_end_tok = ent_end_tok
-    
-    def convert_tokens_to_ids(self, token_list):
-        '''将一个token列表转化为id列表'''
-        ids = [self.tokenizer.bos_token_id]
-        token_to_id = self.tokenizer.convert_tokens_to_ids
-        ids += [token_to_id(w) for w in token_list]
-        ids += [self.tokenizer.eos_token_id]
-        return ids
-    
+        self.tokens_to_ids = self.tokenizer.convert_tokens_to_ids
+
     def get_one_sample(self, sent):
-        '''生成一个样本的输入数据和目标数据'''
+        '''
+        生成一个样本的输入数据和目标数据
+        sent_bund: [
+            ['[CLS]', '感', '动', '中', '国', '[SEP]'], 
+            ['[CLS]', '感', '动', '[[loc.nam-s]]', '中', '国', '[SEP]'], 
+            ['[CLS]', '感', '动', '[[loc.nam-s]]', '中', '国', '[ent_end]', '[SEP]'], 
+            ['[CLS]', '感', '动', '[[loc.nam-s]]', '中', '国', '[ent_end]', '[[loc.nam-e]]', '[SEP]']]
+        targ_bund: [
+            ['[CLS]', '感', '动', '[[loc.nam-s]]', '国', '[SEP]'], 
+            ['[CLS]', '感', '动', '[[loc.nam-s]]', '中', '国', '[ent_end]', '[SEP]'], 
+            ['[CLS]', '感', '动', '[[loc.nam-s]]', '中', '国', '[ent_end]', '[[loc.nam-e]]', '[SEP]']]
+        sent_ids_bund: [
+            [101, 2697, 1220, 704, 1744, 102], 
+            [101, 2697, 1220, 21136, 704, 1744, 102], 
+            [101, 2697, 1220, 21136, 704, 1744, 21144, 102], 
+            [101, 2697, 1220, 21136, 704, 1744, 21144, 21137, 102]]
+        sent_pos_bund: [
+            [0, 19, 20, 21, 22, 1], 
+            [0, 19, 20, 10, 21, 22, 1], 
+            [0, 19, 20, 10, 21, 22, 18, 1], 
+            [0, 19, 20, 10, 21, 22, 18, 11, 1]]
+        targ_ids_bund: [
+            [101, 2697, 1220, 21136, 1744, 102], 
+            [101, 2697, 1220, 21136, 704, 1744, 21144, 102], 
+            [101, 2697, 1220, 21136, 704, 1744, 21144, 21137, 102]] 
+        targ_pos_bund: [
+            [0, 19, 20, 10, 22, 1], 
+            [0, 19, 20, 10, 21, 22, 18, 1], 
+            [0, 19, 20, 10, 21, 22, 18, 11, 1]]
+        '''
         sent_bund, targ_bund, sent_pos_bund, targ_pos_bund = self.get_hier_sent(sent)
         bos_token = self.tokenizer.bos_token
         eos_token = self.tokenizer.eos_token
         sent_bund = [[bos_token]+sent+[eos_token] for sent in sent_bund]
         targ_bund = [[bos_token]+targ+[eos_token] for targ in targ_bund]
-        tokens_to_ids = self.tokenizer.convert_tokens_to_ids
-        sent_ids_bund = [tokens_to_ids(tks) for tks in sent_bund]
-        targ_ids_bund = [tokens_to_ids(tks) for tks in targ_bund]
+        sent_ids_bund = [self.tokens_to_ids(tks) for tks in sent_bund]
+        targ_ids_bund = [self.tokens_to_ids(tks) for tks in targ_bund]
         sent_pos_bund = [[0]+pos+[1] for pos in sent_pos_bund]
         targ_pos_bund = [[0]+pos+[1] for pos in targ_pos_bund]
         targ_ents = self.get_targ_ents(sent_pos_bund[-1])
+        # print(sent_bund, targ_bund)
+        # print(sent_ids_bund, sent_pos_bund)
+        # print(targ_ids_bund, targ_pos_bund)
         dec_src_ids, dec_targ_pos = self.get_dec_src_tar(
             sent_bund, targ_bund,
             sent_ids_bund, sent_pos_bund, 
@@ -141,12 +145,6 @@ class DataDealer:
             'dec_targ_pos': dec_targ_pos,
             'targ_ents': targ_ents
         }
-
-        # return {
-        #     'chars':sent,'sent_bund_ids':sent_bund_ids,'targ_bund_ids':targ_bund_ids,
-        #     'sent_pos_bund': sent_pos_bund, 'targ_pos_bund': targ_pos_bund,
-        #     'targ_ents': targ_ents
-        # }
 
     def get_hier_sent(self, sent):
         '''
@@ -163,18 +161,18 @@ class DataDealer:
             ['感', '动', '[loc.nam-s]', '中', '国', '[ent_end]'], 
             ['感', '动', '[loc.nam-s]', '中', '国', '[ent_end]', '[loc.nam-e]']]
         targ_bund: [
-            ['动', '[loc.nam-s]', '国'], 
-            ['动', '[loc.nam-s]', '中', '[ent_end]'], 
-            ['动', '[loc.nam-s]', '中', '[ent_end]', '[loc.nam-e]']]
+            ['感', '动', '[[loc.nam-s]]', '国'], 
+            ['感', '动', '[[loc.nam-s]]', '中', '国', '[ent_end]'], 
+            ['感', '动', '[[loc.nam-s]]', '中', '国', '[ent_end]', '[[loc.nam-e]]']]
         sent_pos_bund: [
             [19, 20, 21, 22], 
             [19, 20, 10, 21, 22], 
             [19, 20, 10, 21, 22, 18], 
             [19, 20, 10, 21, 22, 18, 11]]
-        targ_pos_bund: [
-            [20, 10, 22], 
-            [20, 10, 21, 18], 
-            [20, 10, 21, 18, 11]]
+        targ_pos_bund:  [
+            [19, 20, 10, 22], 
+            [19, 20, 10, 21, 22, 18], 
+            [19, 20, 10, 21, 22, 18, 11]]
         '''
         last_w = {'word':'', 'tag':'o'}
         ent_end_tok = self.ent_end_tok
@@ -270,7 +268,7 @@ class DataDealer:
         dec_src_pos = []
         dec_targ_ids = []
         dec_targ_pos = []
-        print('278')
+        # print('278')
         for i in range(len(targ_pos_bund)):
             sent_toks = sent_bund[i]
             sent_ids = sent_ids_bund[i]
@@ -285,9 +283,9 @@ class DataDealer:
             dec_targ_toks.append(targ_toks[1:])
             dec_targ_ids.append(targ_ids[1:])
             dec_targ_pos.append(targ_pos[1:])
-            print(dec_src_toks[-1])
-            print(dec_targ_toks[-1])
-            print(dec_src_ids[-1], dec_targ_ids[-1])
+            # print(dec_src_toks[-1])
+            # print(dec_targ_toks[-1])
+            # print(dec_src_ids[-1], dec_targ_ids[-1])
             
         return dec_src_ids, dec_targ_pos
 
