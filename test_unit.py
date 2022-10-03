@@ -1,11 +1,11 @@
 
-def test_data_pipe():
-    from data_pipe import DataDealer
+def test_data_reader():
+    from data_pipe import DataReader
     filename = '/data1/nzw/CNER/weibo_conll/test.test'
-    data_dealer = DataDealer()
-    data_dealer.parse_data(filename)
-    sent_bundles = data_dealer.sentence_bundle[:5]
-    targ_bundles = data_dealer.target_bundle[:5]
+    data_reader = DataReader()
+    data_reader.parse_data(filename)
+    sent_bundles = data_reader.sentence_bundle[:5]
+    targ_bundles = data_reader.target_bundle[:5]
     for sent_bund, targ_bund in zip(sent_bundles, targ_bundles):
         for sent in sent_bund:
             print(''.join([e['word'] for e in sent]))
@@ -14,27 +14,27 @@ def test_data_pipe():
             print(''.join(targ))
 
 def test_my_tokenizer():
-    from data_pipe import DataLoader, MyTokenizer
+    from data_pipe import DataReader, MyTokenizer
     file_path = '/data1/nzw/CNER/weibo_conll/test.test'
-    data_dealer = DataLoader()
-    data_dealer.parse_data(file_path)
+    data_reader = DataReader()
+    data_reader.parse_data(file_path)
     model_path = '/data1/nzw/model/bart-base-chinese/'
     my_tknzr = MyTokenizer.from_pretrained(model_path)
-    my_tknzr.add_special_tokens(data_dealer.new_tokens)
+    my_tknzr.add_special_tokens(data_reader.new_tokens)
     print(my_tknzr.dic_cls_tok_id)
     print(my_tknzr.dic_cls_order)
 
 def test_data_dealer():
-    from data_pipe import DataLoader, MyTokenizer, DataDealer
+    from data_pipe import DataReader, MyTokenizer, DataDealer
     file_path = '/data1/nzw/CNER/weibo_conll/test.test'
-    data_loader = DataLoader()
-    data_loader.parse_data(file_path)
+    data_reader = DataReader()
+    data_reader.parse_data(file_path)
     model_path = '/data1/nzw/model/bart-base-chinese/'
     my_tknzr = MyTokenizer.from_pretrained(model_path)
-    my_tknzr.add_special_tokens(data_loader.new_tokens_bundle)
+    my_tknzr.add_special_tokens(data_reader.new_tokens_bundle)
     
-    data_dealer = DataDealer(data_loader, my_tknzr)
-    sent = data_loader.sentences[0]
+    data_dealer = DataDealer(my_tknzr)
+    sent = data_reader.sentences[0]
     sent = [
         {'word':'感','tag':'o'},{'word':'动','tag':'o'},
         {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'}]
@@ -43,19 +43,21 @@ def test_data_dealer():
     #     {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'},
     #     {'word':'人','tag':'b-per.nam'},{'word':'物','tag':'i-per.nam'},
     #     {'word':'物','tag':'o'}]
-    # sent = [
-    #     {'word':'人','tag':'b-per.nam'},{'word':'物','tag':'i-per.nam'},
-    #     {'word':'物','tag':'o'}]
+    sent = [
+        {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'},
+        {'word':'人','tag':'b-per.nam'},{'word':'物','tag':'i-per.nam'},
+        ]
     res = data_dealer.get_hier_sent(sent)
-    print(res)
+    # print(res)
     for s, t in zip(res[0], res[1]):
         print(s)
         print(t)
-    # for s, t in zip(res[1], res[3]):
-    #     print(s)
-    #     print(t)
+    print('55', res[0][3])
     ents = data_dealer.get_targ_ents(res[2][-1])
-    print(ents)
+    print('实体', ents)
+    data_dealer.get_one_sample(sent)
+    # for sent in data_reader.sentences:
+    #     data_dealer.get_one_sample(sent)
 
 if __name__ == '__main__':
     # test_data_pipe()
