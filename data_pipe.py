@@ -320,18 +320,18 @@ class DataDealer:
                 i += 1
         return ents
 
-def padding(data, padding_value, dim=2):
+def padding(data, pad_value=0, dim=2):
     '''
     pad data to maximum length
     data: list(list), unpadded data
-    padding_value: int, filled value
+    pad_value: int, filled value
     dim: int, dimension of padded data
         dim=2, result=(batch_size, sen_len)
         dim=3, result=(batch_size, sen_len, word_len)
     '''
     sen_len = max([len(d) for d in data])
     if dim == 2:
-        padded_data = [d + [padding_value] * (sen_len-len(d)) for d in data]
+        padded_data = [d + [pad_value] * (sen_len-len(d)) for d in data]
         padded_mask = [[1] * len(d) + [0] * (sen_len-len(d)) for d in data]
         return padded_data, padded_mask
     elif dim == 3:
@@ -342,10 +342,10 @@ def padding(data, padding_value, dim=2):
             padded_data.append([])
             padded_mask.append([])
             for dd in d:
-                padded_data[-1].append(dd + [padding_value] * (word_len-len(dd)))
+                padded_data[-1].append(dd + [pad_value] * (word_len-len(dd)))
                 padded_mask[-1].append([1] * len(dd) + [0] * (word_len-len(dd)))
             for _ in range(sen_len - len(d)):
-                padded_data[-1].append([padding_value] * word_len)
+                padded_data[-1].append([pad_value] * word_len)
                 padded_mask[-1].append([0] * word_len)
         return padded_data, padded_mask
     else:

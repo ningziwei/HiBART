@@ -61,9 +61,11 @@ def test_data_dealer():
     # for sent in data_reader.sentences:
     #     data_dealer.get_one_sample(sent)
 
-from data_pipe import *
-from dataset import *
+from torch.utils.data import DataLoader
 def test_random_sampler():
+    from data_pipe import parse_CoNLL_file, parse_label
+    from data_pipe import MyTokenizer, DataDealer
+    from dataset import CoNLLDataset, GroupBatchRandomSampler, collate_fn
     file_path = '/data1/nzw/CNER/weibo_conll/test.test'
     sentences = parse_CoNLL_file(file_path)
     new_tokens_bundle = parse_label(sentences)
@@ -75,11 +77,25 @@ def test_random_sampler():
     data_dealer = DataDealer(my_tknzr)
     dataset = CoNLLDataset(sentences, data_dealer)
     samp = GroupBatchRandomSampler(dataset, 10, 20)
+    train_loader = DataLoader(
+        dataset=dataset, 
+        batch_sampler=samp, 
+        collate_fn=collate_fn)
     for s in samp:
         print('79', s)
+
+import json
+def test_data_loader():
+    from model import get_data_loader
+    with open('config.json', encoding="utf-8") as fp:
+        config = json.load(fp)
+    loaders = get_data_loader(config)
+    for i,batch in enumerate(loaders[1]):
+        print(i, batch)
+    
 
 if __name__ == '__main__':
     # test_data_pipe()
     # test_my_tokenizer()
     # test_data_dealer()
-    test_random_sampler()
+    test_data_loader()

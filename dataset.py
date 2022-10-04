@@ -4,7 +4,7 @@ import bisect
 import numpy as np
 from torch.utils.data import Dataset
 from torch.utils.data.sampler import Sampler, SubsetRandomSampler, BatchSampler
-from data_pipe import parse_CoNLL_file, parse_label
+from data_pipe import padding
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -62,18 +62,20 @@ class GroupBatchRandomSampler(Sampler):
     def __len__(self):
         return len(self.batch_indices)
 
-
-def collate_fn(batch_data):
+def collate_fn(batch_data, pad_value=0):
     padded_batch = dict()
-    enc_src_ids, mask = padding([d["enc_src_ids"] for d in batch_data])
+    enc_src_ids, mask = padding(
+        [d["enc_src_ids"] for d in batch_data], pad_value)
     padded_batch["enc_src_ids"] = torch.tensor(enc_src_ids, dtype=torch.long, device=device)
     padded_batch["enc_mask"] = torch.tensor(mask, dtype=torch.bool, device=device)
     
-    dec_src_ids, mask = padding([d["dec_src_ids"] for d in batch_data], dim=3)
+    dec_src_ids, mask = padding(
+        [d["dec_src_ids"] for d in batch_data], pad_value, dim=3)
     padded_batch["dec_src_ids"] = torch.tensor(dec_src_ids, dtype=torch.long, device=device)
     padded_batch["dec_mask"] = torch.tensor(mask, dtype=torch.bool, device=device)
     
-    dec_targ_pos, mask = padding([d["dec_targ_pos"] for d in batch_data], dim=3)
+    dec_targ_pos, mask = padding(
+        [d["dec_targ_pos"] for d in batch_data], pad_value, dim=3)
     padded_batch["dec_targ_pos"] = torch.tensor(dec_targ_pos, dtype=torch.long, device=device)
 
     targ_ents = [d["targ_ents"] for d in batch_data]
