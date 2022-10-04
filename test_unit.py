@@ -40,6 +40,8 @@ def test_data_dealer():
     sent = [
         {'word':'感','tag':'o'},{'word':'动','tag':'o'},
         {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'}]
+    sent = [
+        {'word':'感','tag':'o'},{'word':'动','tag':'o'}]
     # sent = [
     #     {'word':'感','tag':'o'},{'word':'动','tag':'o'},
     #     {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'},
@@ -57,7 +59,8 @@ def test_data_dealer():
     # print('55', res[0][3])
     # ents = data_dealer.get_targ_ents(res[2][-1])
     # print('实体', ents)
-    data_dealer.get_one_sample(sent)
+    samp = data_dealer.get_one_sample(sent)
+    print(samp)
     # for sent in data_reader.sentences:
     #     data_dealer.get_one_sample(sent)
 
@@ -91,11 +94,12 @@ def test_data_loader():
         config = json.load(fp)
     loaders = get_data_loader(config)
     for i,batch in enumerate(loaders[1]):
-        print(i, batch)
+        print(i, batch['dec_src_ids'].shape)
     
 
 if __name__ == '__main__':
     # test_data_pipe()
     # test_my_tokenizer()
     # test_data_dealer()
+    # test_random_sampler()
     test_data_loader()

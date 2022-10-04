@@ -5,7 +5,7 @@
     "bart_path": "/data1/nzw/model/bart-base-chinese/",
     "output_path": "/data1/nzw/Named-Entity-Recognition",
     "prefix": "BERT_raw_GPU1",
-    "batch_size": 2,
+    "batch_size": 10,
     "group_interval": 20,
     "epochs": 30,
     "lr": 1e-5,
