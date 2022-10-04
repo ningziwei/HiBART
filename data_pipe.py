@@ -140,7 +140,9 @@ class DataDealer:
             targ_ids_bund, targ_pos_bund)
         return {
             'raw_chars': sent_bund[0],
+            'targ_toks': sent_bund[-1],
             'enc_src_ids': sent_ids_bund[0],
+            'enc_src_len': len(sent_ids_bund[0]),
             'dec_src_ids': dec_src_ids,
             'dec_targ_pos': dec_targ_pos,
             'targ_ents': targ_ents
