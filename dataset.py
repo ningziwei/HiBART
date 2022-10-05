@@ -72,12 +72,12 @@ def collate_fn(batch_data, pad_value=0):
     
     dec_src_ids, mask = padding(
         [d["dec_src_ids"] for d in batch_data], pad_value, dim=3)
-    padded_batch["dec_src_ids"] = torch.tensor(dec_src_ids, dtype=torch.long, device=device)
-    padded_batch["dec_masks"] = torch.tensor(mask, dtype=torch.bool, device=device)
+    padded_batch["dec_src_ids_bund"] = torch.tensor(dec_src_ids, dtype=torch.long, device=device)
+    padded_batch["dec_mask_bund"] = torch.tensor(mask, dtype=torch.bool, device=device)
     
     dec_targ_pos, mask = padding(
         [d["dec_targ_pos"] for d in batch_data], pad_value, dim=3)
-    padded_batch["dec_targ_pos"] = torch.tensor(dec_targ_pos, dtype=torch.long, device=device)
+    padded_batch["dec_targ_pos_bund"] = torch.tensor(dec_targ_pos, dtype=torch.long, device=device)
 
     targ_ents = [d["targ_ents"] for d in batch_data]
     padded_batch["targ_ents"] = targ_ents
