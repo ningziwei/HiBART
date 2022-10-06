@@ -29,19 +29,19 @@ def test_data_dealer():
     from data_pipe import MyTokenizer, DataDealer
     file_path = '/data1/nzw/CNER/weibo_conll/test.test'
     sentences = parse_CoNLL_file(file_path)
-    new_tokens_bundle = parse_label(sentences)
+    cls_tok_dic, new_tokens_bundle = parse_label(sentences)
 
     model_path = '/data1/nzw/model/bart-base-chinese/'
     my_tknzr = MyTokenizer.from_pretrained(model_path)
-    my_tknzr.add_special_tokens(new_tokens_bundle)
+    my_tknzr.add_special_tokens(cls_tok_dic, new_tokens_bundle)
     
     data_dealer = DataDealer(my_tknzr)
     sent = sentences[0]
     sent = [
         {'word':'感','tag':'o'},{'word':'动','tag':'o'},
         {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'}]
-    sent = [
-        {'word':'感','tag':'o'},{'word':'动','tag':'o'}]
+    # sent = [
+    #     {'word':'感','tag':'o'},{'word':'动','tag':'o'}]
     # sent = [
     #     {'word':'感','tag':'o'},{'word':'动','tag':'o'},
     #     {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'},
@@ -100,6 +100,6 @@ def test_data_loader():
 if __name__ == '__main__':
     # test_data_pipe()
     # test_my_tokenizer()
-    # test_data_dealer()
+    test_data_dealer()
     # test_random_sampler()
-    test_data_loader()
+    # test_data_loader()

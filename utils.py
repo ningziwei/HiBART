@@ -3,6 +3,7 @@ import time
 class Logger(object):
     def __init__(self, fp=None):
         self.fp = fp
+        
     def __call__(self, string, end='\n'):
         curr_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
         new_string = '[%s] ' % curr_time + string

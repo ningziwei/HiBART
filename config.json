@@ -3,13 +3,14 @@
     "vocab_dir": "vocab",
     "dataset": "weibo_conll",
     "bart_path": "/data1/nzw/model/bart-base-chinese/",
-    "output_path": "/data1/nzw/Named-Entity-Recognition",
-    "prefix": "BERT_raw_GPU1",
+    "output_path": "/data1/nzw/model_saved/HiBart",
+    "prefix": "HiBart",
     "batch_size": 10,
     "group_interval": 20,
     "epochs": 30,
     "lr": 1e-5,
     "scheduler_step": 20,
     "grad_accum_step": 1,
-    "show_loss_step": 200
+    "show_loss_step": 200,
+    "static_eos": 0
 }

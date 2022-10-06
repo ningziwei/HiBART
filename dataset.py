@@ -7,6 +7,7 @@ from torch.utils.data.sampler import Sampler, SubsetRandomSampler, BatchSampler
 from data_pipe import padding
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
 class CoNLLDataset(Dataset):
     '''输入数据的迭代器'''
@@ -44,12 +45,12 @@ class GroupBatchRandomSampler(Sampler):
         for i, data in enumerate(self.data_source):
             group_id = bisect.bisect_right(breakpoints, len(data["enc_src_ids"]))
             self.groups[group_id].append(i)
-        # self.batch_indices = []
-        # for g in self.groups:
-        #     self.batch_indices.extend(list(
-        #         BatchSampler(SubsetRandomSampler(g), 
-        #         self.batch_size, False)
-        #     ))
+        self.batch_indices = []
+        for g in self.groups:
+            self.batch_indices.extend(list(
+                BatchSampler(SubsetRandomSampler(g), 
+                self.batch_size, False)
+            ))
     
     def __iter__(self):
         batch_indices = []

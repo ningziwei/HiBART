@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from losses import CrossEntropyLossWithMask
 
 class HiDecoder(nn.Module):
     def __init__(self, decoder, args):
@@ -20,17 +19,18 @@ class HiDecoder(nn.Module):
         )
     
     def forward(
-        self, enc_output, enc_src_ids, enc_len, enc_mask, 
+        self, enc_output, 
+        enc_src_ids, enc_src_len, enc_mask, 
         dec_src_ids, dec_mask):
         '''
         预测一次输出，得到token是每个候选token的概率
         enc_output: bsz*max_len*emb_dim
-        enc_len: bsz*1
+        enc_src_len: bsz*1
         '''
         # 过解码器，得到隐藏状态
         causal_mask = self.causal_mask[
             :dec_src_ids.size(1), :dec_src_ids.size(1)]
-        dec_state_dic = self.bart.decoder(
+        dec_state_dic = self.decoder(
             input_ids=dec_src_ids,
             encoder_hidden_states=enc_output,
             encoder_padding_mask=enc_mask,
@@ -42,7 +42,7 @@ class HiDecoder(nn.Module):
         hidden_state = self.dropout_layer(hidden_state)
         # 初始化预测结果，bsz*dec_out_max_len*enc_out_max_len
         logits = hidden_state.new_full(
-            list(hidden_state.size())+[enc_output.size(-1)],
+            list(hidden_state.size()[:2])+[enc_output.size(1)],
             fill_value=-1e24)
         
         if self.args['static_eos']:
@@ -52,8 +52,9 @@ class HiDecoder(nn.Module):
             eos_scores = F.linear(hidden_state, self.dropout_layer(eos_emb))
         else:
             # 动态结束符，用结束符的编码向量作为目标
-            eos_emb = enc_output[range(len(enc_output)), enc_len-1, :]
+            eos_emb = enc_output[range(len(enc_output)), enc_src_len-1, :]
             eos_emb = eos_emb.unsqueeze(1)
+            # print('57', hidden_state.shape, eos_emb.shape)
             eos_scores = torch.bmm(hidden_state, eos_emb.permute(0,2,1))
         
         enc_src_embed = self.decoder.embed_tokens(enc_src_ids)
@@ -66,34 +67,36 @@ class HiDecoder(nn.Module):
         # enc_mask: bsz*1*max_enc_len, 结束标记的得分不算在word_score中
         # dec_mask: bsz*max_dec_len*1
         enc_mask = enc_mask.eq(0)
-        enc_mask[range(len(enc_mask)), enc_len-1] = True
+        enc_mask[range(len(enc_mask)), enc_src_len-1] = True
         enc_mask = enc_mask.unsqueeze(1)
         dec_mask = dec_mask.eq(0).unsqueeze(-1)
         word_scores = word_scores.masked_fill(enc_mask, -1e32)
         word_scores = word_scores.masked_fill(dec_mask, -1e32)
 
+        # print('hi_bart 78', logits.shape, eos_scores.shape, word_scores.shape)
         logits[:,:,1:2] = eos_scores
         logits[:,:,0:1] = word_scores[:,:,0:1]
-        logits[:,:,2:] = word_scores[:,:,1:]
+        logits[:,:,2:] = word_scores[:,:,1:-1]
         return logits
 
 class HiBart(nn.Module):
-    def __init__(self, bart):
+    def __init__(self, bart, loss_fn, args):
         super(HiBart, self).__init__()
         self.encoder = bart.encoder
-        self.decoder = HiDecoder(bart.decoder)
-        self.loss_fn = CrossEntropyLossWithMask()
+        self.decoder = HiDecoder(bart.decoder, args)
+        self.loss_fn = loss_fn
     
     def forward(
-        self, enc_src_ids, enc_len, enc_mask, 
+        self, enc_src_ids, enc_src_len, enc_mask, 
         dec_src_ids_bund, dec_mask_bund, dec_targ_pos_bund):
         '''
-        enc_src_ids: batch_size*max_len
-        enc_mask: batch_size*max_len
-        dec_src_ids_bund: batch_size*3*max_len
-        dec_mask: batch_size*3*max_len
-        dec_targ_pos: batch_size*3*max_len
-        经过三次解码器得到三个loss
+        enc_src_ids: batch_size*enc_max_len
+        enc_src_len: batch_size*1
+        enc_mask: batch_size*enc_max_len
+        dec_src_ids_bund: batch_size*3*dec_max_len
+        dec_mask_bund: batch_size*3*dec_max_len
+        dec_targ_pos_bund: batch_size*3*dec_max_len
+        分阶段解码经过三次解码器，最后的loss是三次loss的和
         '''
         enc_state_dic = self.encoder(
             input_ids=enc_src_ids, attention_mask=enc_mask, 
@@ -110,8 +113,12 @@ class HiBart(nn.Module):
             dec_mask = dec_mask_bund[i]
             dec_targ_pos = dec_targ_pos_bund[i]
             pred = self.decoder(
-                enc_output, enc_src_ids, enc_len, enc_mask,
+                enc_output, 
+                enc_src_ids, enc_src_len, enc_mask,
                 dec_src_ids, dec_mask)
-            batch_loss += self.loss_fn(pred, dec_targ_pos)
+            batch_loss += self.loss_fn(
+                pred, dec_targ_pos, dec_mask)
+        
+        return batch_loss
 
 
