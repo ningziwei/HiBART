@@ -30,13 +30,13 @@ def parse_CoNLL_file(filename):
         sentences.pop()
     return sentences
 
-def parse_label(sentences, ent_end_tok='[ent_end]'):
+def parse_label(sentences, ent_end_tok='<<ent_end>>'):
     '''
     得到实体抽取数据集的所有标签和实体类别
     new_tokens_bundle: [
-        ['[b-loc.nam-s]', '[b-loc.nam-e]', 'ent_end'],
-        ['[b-loc.nam-s]'],
-        ['[b-loc.nam-e]', 'ent_end']
+        ['<<b-loc.nam-s>>', '<<b-loc.nam-e>>', '<<ent_end>>'],
+        ['<<b-loc.nam-s>>'],
+        ['<<b-loc.nam-e>>', '<<ent_end>>']
     ]
     '''
     label_dic = {}
@@ -45,24 +45,25 @@ def parse_label(sentences, ent_end_tok='[ent_end]'):
             label_dic[s['tag']] = True
     classes = [
         lab[2:] for lab in label_dic if '-' in lab]
-    class_dic = {
-        lab: [f'[[{lab}-s]]', f'[[{lab}-e]]'] for lab in classes
+    cls_tok_dic = {
+        lab: [f'<<{lab}-s>>', f'<<{lab}-e>>'] for lab in classes
     }
     new_tokens = []
     start_tokens = []
     end_tokens = []
-    for _, v in class_dic.items():
+    for _, v in cls_tok_dic.items():
         new_tokens += v
         start_tokens.append(v[0])
         end_tokens.append(v[1])
     new_tokens.append(ent_end_tok)
     end_tokens.append(ent_end_tok)
 
-    return new_tokens, start_tokens, end_tokens
+    return cls_tok_dic, [new_tokens, start_tokens, end_tokens]
 
 class MyTokenizer(BertTokenizer):
-    def add_special_tokens(self, new_tokens_bundle):
+    def add_special_tokens(self, cls_tok_dic, new_tokens_bundle):
         '''将解码序列中要用到的特殊标记添加到分词器中''' 
+        self.cls_tok_dic = cls_tok_dic
         new_tokens, start_tokens, end_tokens = new_tokens_bundle
         self.unique_no_split_tokens += new_tokens
         self.add_tokens(new_tokens)
@@ -73,8 +74,8 @@ class MyTokenizer(BertTokenizer):
             dic_cls_id[tok] = self.convert_tokens_to_ids(tok)
             dic_cls_order[tok] = len(dic_cls_order)
         dic_cls_pos = {k:v+2 for k,v in dic_cls_order.items()}
-        dic_start_pos_cls = {dic_cls_pos[k] for k in start_tokens}
-        dic_end_pos_cls = {dic_cls_pos[k] for k in end_tokens}
+        dic_start_pos_cls = {dic_cls_pos[k]:k for k in start_tokens}
+        dic_end_pos_cls = {dic_cls_pos[k]:k for k in end_tokens}
         
         self.dic_cls_id = dic_cls_id
         self.dic_cls_order = dic_cls_order
@@ -84,7 +85,7 @@ class MyTokenizer(BertTokenizer):
         
 class DataDealer:
     def __init__(
-        self, tokenizer, ent_end_tok='[ent_end]'
+        self, tokenizer, ent_end_tok='<<ent_end>>'
     ):
         self.tokenizer = tokenizer
         self.ent_end_tok = ent_end_tok
@@ -95,13 +96,13 @@ class DataDealer:
         生成一个样本的输入数据和目标数据
         sent_bund: [
             ['[CLS]', '感', '动', '中', '国', '[SEP]'], 
-            ['[CLS]', '感', '动', '[[loc.nam-s]]', '中', '国', '[SEP]'], 
-            ['[CLS]', '感', '动', '[[loc.nam-s]]', '中', '国', '[ent_end]', '[SEP]'], 
-            ['[CLS]', '感', '动', '[[loc.nam-s]]', '中', '国', '[ent_end]', '[[loc.nam-e]]', '[SEP]']]
+            ['[CLS]', '感', '动', '<<loc.nam-s>>', '中', '国', '[SEP]'], 
+            ['[CLS]', '感', '动', '<<loc.nam-s>>', '中', '国', '<<ent_end>>', '[SEP]'], 
+            ['[CLS]', '感', '动', '<<loc.nam-s>>', '中', '国', '<<ent_end>>', '<<loc.nam-e>>', '[SEP]']]
         targ_bund: [
-            ['[CLS]', '感', '动', '[[loc.nam-s]]', '国', '[SEP]'], 
-            ['[CLS]', '感', '动', '[[loc.nam-s]]', '中', '国', '[ent_end]', '[SEP]'], 
-            ['[CLS]', '感', '动', '[[loc.nam-s]]', '中', '国', '[ent_end]', '[[loc.nam-e]]', '[SEP]']]
+            ['[CLS]', '感', '动', '<<loc.nam-s>>', '国', '[SEP]'], 
+            ['[CLS]', '感', '动', '<<loc.nam-s>>', '中', '国', '<<ent_end>>', '[SEP]'], 
+            ['[CLS]', '感', '动', '<<loc.nam-s>>', '中', '国', '<<ent_end>>', '<<loc.nam-e>>', '[SEP]']]
         sent_ids_bund: [
             [101, 2697, 1220, 704, 1744, 102], 
             [101, 2697, 1220, 21136, 704, 1744, 102], 
@@ -120,6 +121,33 @@ class DataDealer:
             [0, 19, 20, 10, 22, 1], 
             [0, 19, 20, 10, 21, 22, 18, 1], 
             [0, 19, 20, 10, 21, 22, 18, 11, 1]]
+        
+        return: {
+            'raw_chars': ['[CLS]', '感', '动', '中', '国', '[SEP]'], 
+            'src_toks': [
+                '[CLS]', '<<per.nam-s>>', '<<per.nam-e>>', '<<gpe.nam-s>>', 
+                '<<gpe.nam-e>>', '<<org.nom-s>>', '<<org.nom-e>>', '<<per.nom-s>>', 
+                '<<per.nom-e>>', '<<loc.nam-s>>', '<<loc.nam-e>>', '<<loc.nom-s>>', 
+                '<<loc.nom-e>>', '<<gpe.nom-s>>', '<<gpe.nom-e>>', '<<org.nam-s>>', 
+                '<<org.nam-e>>', '<<ent_end>>', '感', '动', '中', '国', '[SEP]'], 
+            'targ_toks': [
+                '[CLS]', '感', '动', '<<loc.nam-s>>', '中', '国', '<<ent_end>>', 
+                '<<loc.nam-e>>', '[SEP]'], 
+            'enc_src_ids': [
+                101, 21128, 21129, 21130, 21131, 21132, 21133, 21134, 21135, 21136, 
+                21137, 21138, 21139, 21140, 21141, 21142, 21143, 21144, 2697, 1220, 
+                704, 1744, 102], 
+            'enc_src_len': 23, 
+            'dec_src_ids': [
+                [101, 2697, 1220, 704, 1744], 
+                [101, 2697, 1220, 21136, 704, 1744, 102], 
+                [101, 2697, 1220, 21136, 704, 1744, 21144, 102]], 
+            'dec_targ_pos': [
+                [19, 20, 10, 22, 1], 
+                [19, 20, 10, 21, 22, 18, 1], 
+                [19, 20, 10, 21, 22, 18, 11, 1]], 
+            'targ_ents': [[10, 21, 22, 18, 11]]
+        }
         '''
         sent_bund, targ_bund, sent_pos_bund, targ_pos_bund = self.get_hier_sent(sent)
         bos_token = self.tokenizer.bos_token
@@ -138,11 +166,18 @@ class DataDealer:
             sent_bund, targ_bund,
             sent_ids_bund, sent_pos_bund, 
             targ_ids_bund, targ_pos_bund)
+        '''在编码器的输入序列中添加表示实体的特殊标记'''
+        src_toks = sent_bund[0]
+        cls_toks = list(self.tokenizer.dic_cls_id.keys())
+        src_toks = [src_toks[0]] + cls_toks + src_toks[1:]
+        enc_src_ids = [self.tokens_to_ids(tk) for tk in src_toks]
+        # print('147', src_toks, enc_src_ids)
         return {
             'raw_chars': sent_bund[0],
+            'src_toks': src_toks,
             'targ_toks': sent_bund[-1],
-            'enc_src_ids': sent_ids_bund[0],
-            'enc_src_len': len(sent_ids_bund[0]),
+            'enc_src_ids': enc_src_ids,
+            'enc_src_len': len(enc_src_ids),
             'dec_src_ids': dec_src_ids,
             'dec_targ_pos': dec_targ_pos,
             'targ_ents': targ_ents
@@ -160,12 +195,12 @@ class DataDealer:
         sent_bund: [
             ['感', '动', '中', '国'], 
             ['感', '动', '[loc.nam-s]', '中', '国'], 
-            ['感', '动', '[loc.nam-s]', '中', '国', '[ent_end]'], 
-            ['感', '动', '[loc.nam-s]', '中', '国', '[ent_end]', '[loc.nam-e]']]
+            ['感', '动', '[loc.nam-s]', '中', '国', '<<ent_end>>'], 
+            ['感', '动', '[loc.nam-s]', '中', '国', '<<ent_end>>', '[loc.nam-e]']]
         targ_bund: [
-            ['感', '动', '[[loc.nam-s]]', '国'], 
-            ['感', '动', '[[loc.nam-s]]', '中', '国', '[ent_end]'], 
-            ['感', '动', '[[loc.nam-s]]', '中', '国', '[ent_end]', '[[loc.nam-e]]']]
+            ['感', '动', '<<loc.nam-s>>', '国'], 
+            ['感', '动', '<<loc.nam-s>>', '中', '国', '<<ent_end>>'], 
+            ['感', '动', '<<loc.nam-s>>', '中', '国', '<<ent_end>>', '<<loc.nam-e>>']]
         sent_pos_bund: [
             [19, 20, 21, 22], 
             [19, 20, 10, 21, 22], 
@@ -178,6 +213,7 @@ class DataDealer:
         '''
         last_w = {'word':'', 'tag':'o'}
         ent_end_tok = self.ent_end_tok
+        cls_tok_dic = self.tokenizer.cls_tok_dic
         dic_cls_pos = self.tokenizer.dic_cls_pos     
         word_shift = len(dic_cls_pos) + 2
         for i,s in enumerate(sent):
@@ -193,7 +229,7 @@ class DataDealer:
         targ_sent = sent[1:] + [last_w]
         for w, w_tar in zip(sent, targ_sent):
             if w['tag'].startswith('b-'):
-                word = '[[{}-s]]'.format(w['tag'][2:])
+                word = cls_tok_dic[w['tag'][2:]][0]
                 sent1.append({
                     'word':word,'tag':'begin','pos':dic_cls_pos[word]
                 })
@@ -224,7 +260,7 @@ class DataDealer:
                 if w['word']: targ1 = targ1[:-1]
                 targ1.append(sent1[-1])
                 # 添加实体类别结束标记
-                word = '[[{}-e]]'.format(w_['tag'][2:])
+                word = cls_tok_dic[w_['tag'][2:]][1]
                 sent2.append({
                     'word':ent_end_tok,'tag':'','pos':dic_cls_pos[ent_end_tok]
                 })
