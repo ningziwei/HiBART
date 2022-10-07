@@ -6,9 +6,6 @@ from torch.utils.data import Dataset
 from torch.utils.data.sampler import Sampler, SubsetRandomSampler, BatchSampler
 from data_pipe import padding
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cpu")
-
 class CoNLLDataset(Dataset):
     '''输入数据的迭代器'''
     def __init__(self, sentences, data_dealer):
@@ -63,7 +60,7 @@ class GroupBatchRandomSampler(Sampler):
     def __len__(self):
         return len(self.batch_indices)
 
-def collate_fn(batch_data, pad_value=0):
+def collate_fn(batch_data, pad_value=0, device=torch.device("cpu")):
     padded_batch = dict()
     enc_src_ids, mask = padding(
         [d["enc_src_ids"] for d in batch_data], pad_value)

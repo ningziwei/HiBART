@@ -15,7 +15,7 @@ from model.hi_bart import HiBart
 from model.losses import CrossEntropyLossWithMask
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cpu")
+# device = torch.device("cpu")
 
 def get_config_dir_logger(config_path):
     with open(config_path, encoding="utf-8") as fp:
@@ -62,7 +62,7 @@ def get_data_loader(config, tokenizer):
         __loader = DataLoader(
             dataset=__dataset, 
             batch_sampler=__sampler, 
-            collate_fn=lambda x: collate_fn(x, pad_value))
+            collate_fn=lambda x: collate_fn(x, pad_value, device))
         return __loader
     
     train_loader = get_loader("train")
