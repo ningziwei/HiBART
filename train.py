@@ -4,7 +4,6 @@ import time
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from transformers import AdamW
 from transformers import get_linear_schedule_with_warmup
 
 import utils
@@ -17,7 +16,15 @@ from model.losses import CrossEntropyLossWithMask
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cpu")
 
-def get_config_dir_logger(config_path):
+def get_config_logger_dir(config_path):
+    '''
+    input
+        config_path: 配置文件名
+    output
+        config: 配置参数
+        logger: 日志记录仪
+        OUTPUT_DIR: 模型存储路径
+    '''
     with open(config_path, encoding="utf-8") as fp:
         config = json.load(fp)
     output_path = config["output_path"]
@@ -32,10 +39,12 @@ def get_config_dir_logger(config_path):
     length = max([len(arg) for arg in config.keys()])
     for arg, value in config.items():
         logger("%s | %s" % (arg.ljust(length).replace('_', ' '), str(value)))
-    return config, OUTPUT_DIR, logger
+    return config, logger, OUTPUT_DIR
 
 def get_tokenizer(config):
-    '''得到模型的tokenizer'''
+    '''
+    解析训练集标签，得到模型添加特殊标记的tokenizer
+    '''
     dataset_dir = os.path.join(config['data_dir'], config['dataset'])
     file_path = os.path.join(dataset_dir, 'train.train')
     sentences = parse_CoNLL_file(file_path)
@@ -93,7 +102,7 @@ def get_model(config, dic_cls_id):
     # print('77', bart.decoder.embed_tokens.weight.data[21144])
     loss_fn = CrossEntropyLossWithMask()
     model = HiBart(bart, loss_fn, config).to(device)
-    optimizer = AdamW(model.parameters(), lr=config["lr"])
+    optimizer = optim.AdamW(model.parameters(), lr=config["lr"])
     total_step = config["total_steps"]
     batch_sched = get_linear_schedule_with_warmup(
         optimizer, 
@@ -103,9 +112,36 @@ def get_model(config, dic_cls_id):
         optimizer, [config["scheduler_step"]], gamma=0.1)
     return model, optimizer, batch_sched, epoch_sched
 
+def test_nan(model):
+    max_params = 0
+    max_grad = 0
+    for name, parms in model.named_parameters():	
+        # continue
+        # print('-----------------------------------')
+        # print('-->name:', name)
+        # print('-->grad_requirs:', parms.requires_grad)
+        
+        if parms.requires_grad:
+            if parms.grad==None:
+                print('居然是None')
+            if parms.grad is not None and torch.any(torch.isnan(parms.grad)):
+                print('有nan')
+                break
+            #     print('-->para:', parms.shape)
+            #     print('-->grad_value:',torch.max(parms.grad).abs())
+        max_params = max(max_params, torch.max(parms).abs())
+        if parms.grad is not None:
+            max_grad = max(max_grad, torch.max(parms.grad).abs())    
+    print('max_params', max_params)
+    print('max_grad', max_grad)
+    # print('train 147', model.encoder.embed_tokens.weight.data[21144][:10])
+    print("=================================")
+    time.sleep(1)
+
 def train():
     config_path = 'config.json'
-    config, OUTPUT_DIR, logger = get_config_dir_logger(config_path)
+    config, logger, OUTPUT_DIR = get_config_logger_dir(config_path)
+    # 初始化分词器、数据集和模型
     try:
         tokenizer = get_tokenizer(config)
         loaders = get_data_loader(config, tokenizer)
@@ -126,15 +162,18 @@ def train():
         os.system("rm -rf %s" % OUTPUT_DIR)
         print(traceback.format_exc())
     
+    # 训练模型
     try:
         logger("Begin training.")
         accum_loss = []
         best_f1, best_f1_word = 0., 0.
         best_epoch = -1
         optimizer.zero_grad()
+        step = 0
         for epoch in range(config["epochs"]):
             model.train()
-            for i, batch in enumerate(train_loader):
+            for batch in train_loader:
+                step += 1
                 loss = model(
                     batch['enc_src_ids'],
                     batch['enc_src_len'],
@@ -144,19 +183,18 @@ def train():
                     batch['dec_targ_pos_bund']
                 )
                 loss.backward()
-                accum_loss.append(loss.item())
-                if (i + 1) % int(config["grad_accum_step"]) == 0:
+                if step % int(config["grad_accum_step"]) == 0:
                     optimizer.step()
                     batch_sched.step()
                     optimizer.zero_grad()
-                if (i + 1) % int(config["show_loss_step"]) == 0:
+                accum_loss.append(loss.item())
+                if step % int(config["show_loss_step"]) == 0:
                     mean_loss = sum(accum_loss) / len(accum_loss)
                     logger("Epoch %d, step %d / %d, loss = %.4f" % (
-                        epoch+1, i+1, len(train_loader), mean_loss
+                        epoch+1, step, len(train_loader), mean_loss
                     ))
                     accum_loss = []
             epoch_sched.step()
-
     except KeyboardInterrupt:
         logger("Interrupted.")
         logger.fp.close()
@@ -167,4 +205,6 @@ def train():
         print(traceback.format_exc())
     
 if __name__=='__main__':
-    train()
+    torch.autograd.set_detect_anomaly(True)
+    with torch.autograd.detect_anomaly():
+        train()
