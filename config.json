@@ -11,6 +11,6 @@
     "lr": 1e-5,
     "scheduler_step": 20,
     "grad_accum_step": 1,
-    "show_loss_step": 200,
+    "show_loss_step": 20,
     "static_eos": 0
 }

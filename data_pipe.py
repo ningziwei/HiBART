@@ -1,5 +1,5 @@
 
-from transformers import BertTokenizer
+from tokenizer_full import BertTokenizer
 
 def parse_CoNLL_file(filename):
     '''
