@@ -720,7 +720,7 @@ class Attention(nn.Module):
             attn_mask: Optional[Tensor] = None,
             output_attentions=False,
             enc_attn=None
-    ) -> Tuple[Tensor, Optional[Tensor]]:
+    ):
         """Input shape: Time(SeqLen) x Batch x Channel"""
         # print('mod bart 721', query.size(), key.size())
         static_kv: bool = self.encoder_decoder_attention
@@ -755,13 +755,10 @@ class Attention(nn.Module):
             k = self._shape(k, -1, bsz)
         if v is not None:
             v = self._shape(v, -1, bsz)
-        # if key_padding_mask is not None:
-        #     print('755 size', key_padding_mask.size())
         if saved_state is not None:
             k, v, key_padding_mask = self._use_saved_state(
                 k, v, saved_state, key_padding_mask, static_kv, bsz)
-        # if isinstance(key_padding_mask, Tensor):
-        #     print('key_padding_mask size', key_padding_mask.size())
+                
         # Update cache
         layer_state[self.cache_key] = {
             "prev_key": k.view(bsz, self.num_heads, -1, self.head_dim),
@@ -804,6 +801,8 @@ class Attention(nn.Module):
                     reshaped = key_padding_mask.unsqueeze(1).unsqueeze(2)
             attn_weights = attn_weights.masked_fill(reshaped, float("-inf"))
             attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
+        if torch.any(torch.isnan(attn_weights)):
+            print('attn_weights', attn_weights)
         attn_weights = F.softmax(attn_weights, dim=-1)
         attn_weights = torch.where(
             torch.isnan(attn_weights), torch.full_like(attn_weights, 0), attn_weights)

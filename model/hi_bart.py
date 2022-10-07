@@ -34,7 +34,7 @@ class HiDecoder(nn.Module):
             input_ids=dec_src_ids,
             encoder_hidden_states=enc_output,
             encoder_padding_mask=enc_mask,
-            decoder_padding_mask=dec_mask,
+            decoder_padding_mask=dec_mask.eq(0),
             decoder_causal_mask=causal_mask,
             return_dict=True
         )
@@ -43,7 +43,7 @@ class HiDecoder(nn.Module):
         # 初始化预测结果，bsz*dec_out_max_len*enc_out_max_len
         logits = hidden_state.new_full(
             list(hidden_state.size()[:2])+[enc_output.size(1)],
-            fill_value=-1e24)
+            fill_value=-1e32)
         
         if self.args['static_eos']:
             # 静态结束符，用词表中的结束符嵌入向量作为目标
@@ -59,33 +59,49 @@ class HiDecoder(nn.Module):
         
         enc_src_embed = self.decoder.embed_tokens(enc_src_ids)
         enc_src_embed = self.dropout_layer(enc_src_embed)
+        enc_output = self.encoder_mlp(enc_output)
         enc_output = self.dropout_layer(enc_output)
         src_embed = (enc_src_embed + enc_output)/2
         word_scores = torch.einsum('blh,bnh->bln', hidden_state, src_embed)
+        eos_scores = word_scores[range(len(enc_output)),:,enc_src_len-1]
+        eos_scores = eos_scores.unsqueeze(-1)
         
         # word_scores: bsz*max_dec_len*max_enc_len
         # enc_mask: bsz*1*max_enc_len, 结束标记的得分不算在word_score中
         # dec_mask: bsz*max_dec_len*1
         enc_mask = enc_mask.eq(0)
-        enc_mask[range(len(enc_mask)), enc_src_len-1] = True
+        # enc_mask[range(len(enc_mask)), enc_src_len-1] = True
         enc_mask = enc_mask.unsqueeze(1)
-        dec_mask = dec_mask.eq(0).unsqueeze(-1)
         word_scores = word_scores.masked_fill(enc_mask, -1e32)
-        word_scores = word_scores.masked_fill(dec_mask, -1e32)
+        # dec_mask = dec_mask.eq(0).unsqueeze(-1)
+        # word_scores = word_scores.masked_fill(dec_mask, -1e32)
 
         # print('hi_bart 78', logits.shape, eos_scores.shape, word_scores.shape)
+        # print('hi_bart 78', logits, eos_scores, word_scores)
         logits[:,:,1:2] = eos_scores
-        logits[:,:,0:1] = word_scores[:,:,0:1]
+        logits[:,:,:1] = word_scores[:,:,0:1]
         logits[:,:,2:] = word_scores[:,:,1:-1]
+        # print('logits', logits)
         return logits
 
 class HiBart(nn.Module):
     def __init__(self, bart, loss_fn, args):
         super(HiBart, self).__init__()
         self.encoder = bart.encoder
-        self.decoder = HiDecoder(bart.decoder, args)
+        self.hi_decoder = HiDecoder(bart.decoder, args)
         self.loss_fn = loss_fn
     
+    def test(self, tmp, slog):
+        print(tmp.shape)
+        for i in range(1):
+            print(slog, i)
+            for j in range(tmp.size(1)):
+                for k in range(tmp.size(2)):
+                    if torch.isnan(tmp[i][j][k]):
+                        print(i,j,k)
+                        print(tmp[i][j])
+                        return
+
     def forward(
         self, enc_src_ids, enc_src_len, enc_mask, 
         dec_src_ids_bund, dec_mask_bund, dec_targ_pos_bund):
@@ -106,17 +122,18 @@ class HiBart(nn.Module):
         dec_src_ids_bund = dec_src_ids_bund.permute(1,0,2)
         dec_mask_bund = dec_mask_bund.permute(1,0,2)
         dec_targ_pos_bund = dec_targ_pos_bund.permute(1,0,2)
+        # self.test(enc_output, 'hi 119')
 
         batch_loss = 0
         for i in range(len(dec_targ_pos_bund)):
             dec_src_ids = dec_src_ids_bund[i]
             dec_mask = dec_mask_bund[i]
             dec_targ_pos = dec_targ_pos_bund[i]
-            pred = self.decoder(
+            pred = self.hi_decoder(
                 enc_output, 
                 enc_src_ids, enc_src_len, enc_mask,
                 dec_src_ids, dec_mask)
-            batch_loss += self.loss_fn(
+            batch_loss = self.loss_fn(
                 pred, dec_targ_pos, dec_mask)
         
         return batch_loss
