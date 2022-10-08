@@ -350,25 +350,12 @@ class BartEncoder(nn.Module):
         if attention_mask is not None:
             attention_mask = invert_mask(attention_mask)
 
-        # print('mod bart 336', input_ids.shape,input_ids)
-        # [  101, 21129, 21130, 21131, 21128,  1355,  2245,  3322,   102]
-        # print('mod bart 337', self.embed_tokens)
-        # print('mod bart 338', self.embed_tokens(torch.tensor([[101]]).to(input_ids)))
-        # print('mod bart 339', id(self.embed_tokens))
         inputs_embeds = self.embed_tokens(input_ids) * self.embed_scale
         '''@@@在pipe中直接生成输入序列的pos id，在embed_positions内部直接返回嵌入结果'''
         embed_pos = self.embed_positions(input_ids,src_pos=src_pos)
-        # print('mod bart 351', inputs_embeds[0][2].requires_grad)
-        # if self.tag_num:
-            # embed_pos[:,1+self.tag_num:] = embed_pos[:,1:-self.tag_num]
-            # for i in range(self.tag_num):
-            #     embed_pos[:,1+i:2+i] = embed_pos[:,:1]
-        # print('mod bart 354', inputs_embeds.shape)
-        # print('mod bart 355', embed_pos.shape)
         x = inputs_embeds + embed_pos
         x = self.layernorm_embedding(x)
         x = F.dropout(x, p=self.dropout, training=self.training)
-        # print('mod bart 359', x)
 
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
