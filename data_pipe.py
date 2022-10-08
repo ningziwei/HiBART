@@ -1,4 +1,5 @@
 
+import json
 from model.tokenizer_full import BertTokenizer
 
 def parse_CoNLL_file(filename):
@@ -30,7 +31,7 @@ def parse_CoNLL_file(filename):
         sentences.pop()
     return sentences
 
-def parse_label(sentences, ent_end_tok='<<ent_end>>'):
+def parse_label(sentences, cls_token_path, ent_end_tok='<<ent_end>>'):
     '''
     得到实体抽取数据集的所有标签和实体类别
     new_tokens_bundle: [
@@ -57,12 +58,22 @@ def parse_label(sentences, ent_end_tok='<<ent_end>>'):
         end_tokens.append(v[1])
     new_tokens.append(ent_end_tok)
     end_tokens.append(ent_end_tok)
+    cls_token_cache = {
+        'cls_tok_dic': cls_tok_dic,
+        'new_tokens_bundle': [new_tokens, start_tokens, end_tokens]
+    }
+    with open(cls_token_path, 'w', encoding='utf8') as f:
+        json.dump(cls_token_cache, f)
+    return cls_token_cache
 
-    return cls_tok_dic, [new_tokens, start_tokens, end_tokens]
+def parse_txt(tokenizer, sent):
+    '''处理预测过程中没有标签的数据'''
+    tokens = tokenizer.tokenize(sent)
+    return [{'word':tok,'tag':'o'} for tok in tokens]
 
 class MyTokenizer(BertTokenizer):
     def add_special_tokens(self, cls_tok_dic, new_tokens_bundle):
-        '''将解码序列中要用到的特殊标记添加到分词器中''' 
+        '''将表示实体边界的特殊标记添加到分词器中''' 
         self.cls_tok_dic = cls_tok_dic
         new_tokens, start_tokens, end_tokens = new_tokens_bundle
         self.unique_no_split_tokens += new_tokens
