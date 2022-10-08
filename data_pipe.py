@@ -1,5 +1,6 @@
 
 import json
+import torch
 from model.tokenizer_full import BertTokenizer
 
 def parse_CoNLL_file(filename):
@@ -90,6 +91,7 @@ class MyTokenizer(BertTokenizer):
         
         self.dic_cls_id = dic_cls_id
         self.dic_cls_order = dic_cls_order
+        self.dic_order_cls = {v:k for k,v in dic_cls_order.items()}
         self.dic_cls_pos = dic_cls_pos
         self.dic_start_pos_cls = dic_start_pos_cls
         self.dic_end_pos_cls = dic_end_pos_cls
@@ -105,30 +107,30 @@ class DataDealer:
     def get_one_sample(self, sent):
         '''
         生成一个样本的输入数据和目标数据
-        sent_bund: [
+        sent_bund: [ 解码一步后的实际输出
             ['[CLS]', '感', '动', '中', '国', '[SEP]'], 
             ['[CLS]', '感', '动', '<<loc.nam-s>>', '中', '国', '[SEP]'], 
             ['[CLS]', '感', '动', '<<loc.nam-s>>', '中', '国', '<<ent_end>>', '[SEP]'], 
             ['[CLS]', '感', '动', '<<loc.nam-s>>', '中', '国', '<<ent_end>>', '<<loc.nam-e>>', '[SEP]']]
-        targ_bund: [
+        targ_bund: [ decoder输出序列对应的中间结果
             ['[CLS]', '感', '动', '<<loc.nam-s>>', '国', '[SEP]'], 
             ['[CLS]', '感', '动', '<<loc.nam-s>>', '中', '国', '<<ent_end>>', '[SEP]'], 
             ['[CLS]', '感', '动', '<<loc.nam-s>>', '中', '国', '<<ent_end>>', '<<loc.nam-e>>', '[SEP]']]
-        sent_ids_bund: [
+        sent_ids_bund: [ sent_bund中token转id
             [101, 2697, 1220, 704, 1744, 102], 
             [101, 2697, 1220, 21136, 704, 1744, 102], 
             [101, 2697, 1220, 21136, 704, 1744, 21144, 102], 
             [101, 2697, 1220, 21136, 704, 1744, 21144, 21137, 102]]
-        sent_pos_bund: [
+        sent_pos_bund: [ sent_bund中token转pos
             [0, 19, 20, 21, 22, 1], 
             [0, 19, 20, 10, 21, 22, 1], 
             [0, 19, 20, 10, 21, 22, 18, 1], 
             [0, 19, 20, 10, 21, 22, 18, 11, 1]]
-        targ_ids_bund: [
+        targ_ids_bund: [ targ_bund中token转id
             [101, 2697, 1220, 21136, 1744, 102], 
             [101, 2697, 1220, 21136, 704, 1744, 21144, 102], 
             [101, 2697, 1220, 21136, 704, 1744, 21144, 21137, 102]] 
-        targ_pos_bund: [
+        targ_pos_bund: [ targ_bund中token转pos
             [0, 19, 20, 10, 22, 1], 
             [0, 19, 20, 10, 21, 22, 18, 1], 
             [0, 19, 20, 10, 21, 22, 18, 11, 1]]
@@ -160,7 +162,8 @@ class DataDealer:
             'targ_ents': [[10, 21, 22, 18, 11]]
         }
         '''
-        sent_bund, targ_bund, sent_pos_bund, targ_pos_bund = self.get_hier_sent(sent)
+        bundles = self.get_hier_sent(sent)
+        sent_bund, targ_bund, sent_pos_bund, targ_pos_bund = bundles
         bos_token = self.tokenizer.bos_token
         eos_token = self.tokenizer.eos_token
         sent_bund = [[bos_token]+sent+[eos_token] for sent in sent_bund]
@@ -310,6 +313,8 @@ class DataDealer:
         '''
         得到解码器输入和目标的token、id、pos列表
         实际上有用的只有sent的ids和targ的pos
+        所有序列都是以[CLS]开头，[SEP]结尾的，所以targ从1开始截取到最后，
+        src根据从0开始截取targ的长度个
         '''
         dec_src_toks = []
         dec_targ_toks = []
@@ -400,7 +405,40 @@ def padding(data, pad_value=0, dim=2):
     else:
         raise NotImplementedError("Dimension %d not supported! Legal option: 2 or 3." % dim)
 
+def flat_sequence(
+    batch_pred, 
+    batch_enc_src_ids, 
+    batch_dec_src_ids,
+    dic_order_cls,
+    pad_value=0,
+    device=torch.device("cpu")
+):
+    '''
+    根据解码结果，将序列拉平
+    '''
+    next_batch_dec_src_ids = []
+    for i in range(len(batch_pred)):
+        pred = batch_pred[i]
+        enc_src_ids = batch_enc_src_ids[i]
+        dec_src_ids = batch_dec_src_ids[i]
+        next_dec_src_ids_next = []
+        for j in range(len(dec_src_ids)):
+            if dec_src_ids[j]==-1: continue
+            next_dec_src_ids_next.append(dec_src_ids[j])
+            if pred[j]-2 in dic_order_cls:
+                next_dec_src_ids_next.append(
+                    enc_src_ids[pred[j]-1])
+        next_batch_dec_src_ids.append(enc_src_ids)
+    next_batch_dec_src_ids, mask = padding(
+        next_batch_dec_src_ids, pad_value)
+    next_batch_dec_src_ids = torch.tensor(
+        next_batch_dec_src_ids, dtype=torch.long, device=device)
+    next_dec_mask = torch.tensor(mask, dtype=torch.bool, device=device)
+    return next_batch_dec_src_ids, next_dec_mask
 
+        
+
+        
 
 
     

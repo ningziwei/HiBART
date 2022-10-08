@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from data_pipe import flat_sequence
 
 class HiDecoder(nn.Module):
     def __init__(self, decoder, args):
@@ -102,6 +103,9 @@ class HiBart(nn.Module):
     def __init__(self, bart, loss_fn, args):
         super(HiBart, self).__init__()
         self.encoder = bart.encoder
+        self.loss_fn = loss_fn
+        self.args = args
+
         self.dropout_layer = nn.Dropout(0.3)
         hidden_size = self.encoder.embed_tokens.weight.size(1)
         self.encoder_mlp = nn.Sequential(
@@ -110,18 +114,7 @@ class HiBart(nn.Module):
             nn.Linear(hidden_size, hidden_size)
         )
         self.hi_decoder = HiDecoder(bart.decoder, args)
-        self.loss_fn = loss_fn
-    
-    def test(self, tmp, slog):
-        print(tmp.shape)
-        for i in range(1):
-            print(slog, i)
-            for j in range(tmp.size(1)):
-                for k in range(tmp.size(2)):
-                    if torch.isnan(tmp[i][j][k]):
-                        print(i,j,k)
-                        print(tmp[i][j])
-                        return
+        
 
     def forward(
         self, enc_src_ids, enc_src_len, enc_mask, 
@@ -140,19 +133,22 @@ class HiBart(nn.Module):
             input_ids=enc_src_ids, attention_mask=enc_mask, 
             return_dict=True, output_hidden_states=True,
         )
-        # print(enc_state_dic.keys())
         enc_output = enc_state_dic.last_hidden_state
-        # src_embed 用于在decoder输出部分计算相似度
+        '''src_embed 用于在decoder输出部分计算相似度'''
         enc_src_embed = self.encoder.embed_tokens(enc_src_ids)
         enc_src_embed = self.dropout_layer(enc_src_embed)
         enc_output_mlp = self.encoder_mlp(enc_output)
         enc_output_mlp = self.dropout_layer(enc_output_mlp)
         src_embed = (enc_src_embed + enc_output_mlp)/2
+        '''
+        训练过程是batch_size*3*dec_max_len，三条都有用
+        预测过程是batch_size*1*dec_max_len，只有第一条有用
+        '''
+        dec_src_ids_bund = dec_src_ids_bund.permute(1,0,2)
+        dec_mask_bund = dec_mask_bund.permute(1,0,2)
 
         if dec_targ_pos_bund is not None:
-            # 训练过程，三段训练依次进行，各loss求和后一起更新
-            dec_src_ids_bund = dec_src_ids_bund.permute(1,0,2)
-            dec_mask_bund = dec_mask_bund.permute(1,0,2)
+            '''训练过程，三段训练依次进行，各loss求和后一起更新'''
             dec_targ_pos_bund = dec_targ_pos_bund.permute(1,0,2)
             batch_loss = 0
             for i in range(len(dec_targ_pos_bund)):
@@ -166,14 +162,25 @@ class HiBart(nn.Module):
                 batch_loss += self.loss_fn(
                     logits, dec_targ_pos, dec_mask)
         else:
-            # 预测过程，执行后解码，解码结果再给到decoder
-            input_ids=enc_src_ids
-            attention_mask=enc_mask
-            # for _ in range(3):
+            '''预测过程，执行后解码，解码结果再给到decoder'''
+            dec_src_ids=dec_src_ids_bund[0]
+            dec_mask=dec_mask_bund[0]
+            for _ in range(3):
+                logits = self.hi_decoder(
+                    enc_output, src_embed,
+                    enc_src_len, enc_mask,
+                    dec_src_ids, dec_mask)
+                batch_pred = torch.argmax(logits, dim=-1)
+                batch_pred = batch_pred.masked_fill(dec_mask.eq(0), -1)
+                dec_src_ids, dec_mask = flat_sequence(
+                    batch_pred, 
+                    batch_enc_src_ids=enc_src_ids, 
+                    batch_dec_src_ids=dec_src_ids,
+                    dic_order_cls=self.args['dic_order_cls'],
+                    pad_value=self.args['pad_value'],
+                    device=self.args['device']
+                )
 
-
-
-        
         return batch_loss
 
 

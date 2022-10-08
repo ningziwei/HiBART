@@ -46,10 +46,16 @@ def get_tokenizer(config):
     解析训练集标签，得到模型添加特殊标记的tokenizer
     '''
     dataset_dir = os.path.join(config['data_dir'], config['dataset'])
-    file_path = os.path.join(dataset_dir, 'train.train')
-    sentences = parse_CoNLL_file(file_path)
-    cls_tok_dic, new_tokens_bundle = parse_label(sentences)
-
+    cls_token_path = os.path.join(dataset_dir, 'cls_token.json')
+    if not os.path.exists(cls_token_path):
+        file_path = os.path.join(dataset_dir, 'train.train')
+        sentences = parse_CoNLL_file(file_path)
+        cls_token_cache = parse_label(sentences, cls_token_path)
+    else:
+        with open(cls_token_path, encoding="utf-8") as fp:
+            cls_token_cache = json.load(fp)
+    cls_tok_dic = cls_token_cache['cls_tok_dic']
+    new_tokens_bundle = cls_token_cache['new_tokens_bundle']
     model_path = config['bart_path']
     my_tokenizer = MyTokenizer.from_pretrained(model_path)
     my_tokenizer.add_special_tokens(cls_tok_dic, new_tokens_bundle)
@@ -59,9 +65,9 @@ def get_tokenizer(config):
 def get_data_loader(config, tokenizer):
     '''得到三个数据集的dataloader'''
     device = config['device']
+    pad_value = config['pad_value']
     dataset_dir = os.path.join(config['data_dir'], config['dataset'])
     data_dealer = DataDealer(tokenizer)
-    pad_value = tokenizer.pad_token_id
 
     def get_loader(subset):
         file_path = os.path.join(dataset_dir, f'{subset}.{subset}')
@@ -140,8 +146,6 @@ def test_nan(model):
     print("=================================")
     time.sleep(1)
 
-
-
 def train():
     config_path = 'config.json'
     config, logger, OUTPUT_DIR = get_config_logger_dir(config_path)
@@ -149,9 +153,11 @@ def train():
     # 初始化分词器、数据集和模型
     try:
         tokenizer = get_tokenizer(config)
+        config['eos_id'] = tokenizer.eos_token_id
+        config['pad_value'] = tokenizer.pad_token_id
+        config['dic_order_cls'] = tokenizer.dic_order_cls
         loaders = get_data_loader(config, tokenizer)
         train_loader, test_loader, valid_loader = loaders
-        config['eos_id'] = tokenizer.eos_token_id
         config["total_steps"] = config["epochs"] * len(train_loader)
         models = get_model(config, tokenizer.dic_cls_id)
         model, optimizer, batch_sched, epoch_sched = models
