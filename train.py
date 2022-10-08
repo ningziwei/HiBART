@@ -58,6 +58,7 @@ def get_tokenizer(config):
 
 def get_data_loader(config, tokenizer):
     '''得到三个数据集的dataloader'''
+    device = config['device']
     dataset_dir = os.path.join(config['data_dir'], config['dataset'])
     data_dealer = DataDealer(tokenizer)
     pad_value = tokenizer.pad_token_id
@@ -95,6 +96,7 @@ def init_cls_token(bart, dic_cls_id, triv_tokenizer):
 
 def get_model(config, dic_cls_id):
     '''初始化模型、优化器、学习率函数'''
+    device = config['device']
     model_path = config['bart_path']
     bart = BartModel.from_pretrained(model_path).to(device)
     triv_tokenizer = MyTokenizer.from_pretrained(model_path)
@@ -138,9 +140,12 @@ def test_nan(model):
     print("=================================")
     time.sleep(1)
 
+
+
 def train():
     config_path = 'config.json'
     config, logger, OUTPUT_DIR = get_config_logger_dir(config_path)
+    config['device'] = device
     # 初始化分词器、数据集和模型
     try:
         tokenizer = get_tokenizer(config)
@@ -189,6 +194,7 @@ def train():
                     optimizer.zero_grad()
                 accum_loss.append(loss.item())
                 if step % int(config["show_loss_step"]) == 0:
+                    # print('train 192', model.encoder.embed_tokens.weight.data[21144][:10])
                     mean_loss = sum(accum_loss) / len(accum_loss)
                     logger("Epoch %d, step %d / %d, loss = %.4f" % (
                         epoch+1, step, len(train_loader), mean_loss
