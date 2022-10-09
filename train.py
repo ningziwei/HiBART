@@ -62,12 +62,11 @@ def get_tokenizer(config):
     
     return my_tokenizer
 
-def get_data_loader(config, tokenizer):
+def get_data_loader(config, data_dealer):
     '''得到三个数据集的dataloader'''
     device = config['device']
     pad_value = config['pad_value']
     dataset_dir = os.path.join(config['data_dir'], config['dataset'])
-    data_dealer = DataDealer(tokenizer)
 
     def get_loader(subset):
         file_path = os.path.join(dataset_dir, f'{subset}.{subset}')
@@ -146,6 +145,25 @@ def test_nan(model):
     print("=================================")
     time.sleep(1)
 
+def evaluate(model, loader, rotate_pos_cls):
+    with torch.no_grad():
+        model.eval()
+        predicts, labels = [], []
+        for batch in loader:
+            step += 1
+            pred = model(
+                batch['enc_src_ids'],
+                batch['enc_src_len'],
+                batch['enc_mask'],
+                batch['dec_src_ids_bund'],
+                batch['dec_mask_bund']
+            )
+            predicts += [get_targ_ents(p, rotate_pos_cls) for p in pred]
+            labels += batch['targ_ents']
+        ep, er, ef = utils.micro_metrics(predicts, labels)
+        model.train()
+    return ep, er, ef
+
 def train():
     config_path = 'config.json'
     config, logger, OUTPUT_DIR = get_config_logger_dir(config_path)
@@ -156,7 +174,9 @@ def train():
         config['eos_id'] = tokenizer.eos_token_id
         config['pad_value'] = tokenizer.pad_token_id
         config['dic_hir_pos_cls'] = tokenizer.dic_hir_pos_cls
-        loaders = get_data_loader(config, tokenizer)
+        data_dealer = DataDealer(tokenizer)
+        rotate_pos_cls = data_dealer.rotate_pos_cls
+        loaders = get_data_loader(config, data_dealer)
         train_loader, test_loader, valid_loader = loaders
         config["total_steps"] = config["epochs"] * len(train_loader)
         models = get_model(config, tokenizer.dic_cls_id)
@@ -207,6 +227,20 @@ def train():
                     ))
                     accum_loss = []
             epoch_sched.step()
+
+            valid_metrics = evaluate(model, valid_loader)
+            vep, ver, vef = [m*100 for m in valid_metrics]
+            logger("Epoch %d, valid entity p = %.2f%%, r = %.2f%%, f = %.2f%%" % (epoch + 1, vep, ver, vef))
+            test_metrics = evaluate(model, test_loader)
+            tep, ter, tef = [m*100 for m in test_metrics]
+            logger("Epoch %d, test  entity p = %.2f%%, r = %.2f%%, f = %.2f%%" % (epoch + 1, tep, ter, tef))
+            if tef > best_f1:
+                best_f1 = tef
+                best_epoch = epoch
+                torch.save(model.state_dict(), os.path.join(OUTPUT_DIR, "snapshot.model"))
+                logger("Epoch %d, save model." % (epoch+1))
+        logger("Best epoch %d, best entity f1: %.2f%%" % (best_epoch+1, best_f1))
+        logger.fp.close()
     except KeyboardInterrupt:
         logger("Interrupted.")
         logger.fp.close()

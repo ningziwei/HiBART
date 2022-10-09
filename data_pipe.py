@@ -110,6 +110,10 @@ class DataDealer:
         self.tokenizer = tokenizer
         self.ent_end_tok = ent_end_tok
         self.tokens_to_ids = self.tokenizer.convert_tokens_to_ids
+        rotate_pos_cls = []
+        rotate_pos_cls.append(tokenizer.dic_start_pos_cls)
+        rotate_pos_cls.append(tokenizer.dic_all_end_pos_cls)
+        self.rotate_pos_cls = rotate_pos_cls
 
     def get_one_sample(self, sent):
         '''
@@ -179,7 +183,7 @@ class DataDealer:
         targ_ids_bund = [self.tokens_to_ids(tks) for tks in targ_bund]
         sent_pos_bund = [[0]+pos+[1] for pos in sent_pos_bund]
         targ_pos_bund = [[0]+pos+[1] for pos in targ_pos_bund]
-        targ_ents = self.get_targ_ents(sent_pos_bund[-1])
+        targ_ents = self.get_targ_ents(sent_pos_bund[-1], self.rotate_pos_cls)
         # print(sent_bund, targ_bund)
         # print(sent_ids_bund, sent_pos_bund)
         # print(targ_ids_bund, targ_pos_bund)
@@ -350,37 +354,7 @@ class DataDealer:
             
         return dec_src_ids, dec_targ_pos
 
-    def get_targ_ents(self, pos_list):
-        '''得到序列中的实体'''
-        i, N = 0, len(pos_list)
-        rotate_pos_cls = []
-        rotate_pos_cls.append(self.tokenizer.dic_start_pos_cls)
-        rotate_pos_cls.append(self.tokenizer.dic_all_end_pos_cls)
-
-        ents = []
-        while i<N:
-            # 碰到实体开始符
-            if pos_list[i] in rotate_pos_cls[0]:
-                ent = [pos_list[i]]
-                i += 1
-                while i<N:
-                    ent.append(pos_list[i])
-                    # 碰到实体结束符
-                    if pos_list[i] in rotate_pos_cls[1]:
-                        i += 1
-                        while i<N:
-                            if pos_list[i] in rotate_pos_cls[1]:
-                                ent.append(pos_list[i])
-                            else:
-                                break
-                            i += 1
-                        break
-                    i += 1
-                ents.append(ent)
-            else:
-                i += 1
-        return ents
-
+    
 def padding(data, pad_value=0, dim=2):
     '''
     pad data to maximum length
@@ -412,6 +386,34 @@ def padding(data, pad_value=0, dim=2):
     else:
         raise NotImplementedError("Dimension %d not supported! Legal option: 2 or 3." % dim)
 
+def get_targ_ents(pos_list, rotate_pos_cls):
+    '''得到序列中的实体'''
+    i, N = 0, len(pos_list)
+
+    ents = []
+    while i<N:
+        # 碰到实体开始符
+        if pos_list[i] in rotate_pos_cls[0]:
+            ent = [pos_list[i]]
+            i += 1
+            while i<N:
+                ent.append(pos_list[i])
+                # 碰到实体结束符
+                if pos_list[i] in rotate_pos_cls[1]:
+                    i += 1
+                    while i<N:
+                        if pos_list[i] in rotate_pos_cls[1]:
+                            ent.append(pos_list[i])
+                        else:
+                            break
+                        i += 1
+                    break
+                i += 1
+            ents.append(ent)
+        else:
+            i += 1
+    return ents
+
 def flat_sequence(
     batch_pred, 
     batch_enc_src_ids, 
@@ -423,7 +425,7 @@ def flat_sequence(
     '''
     根据解码结果，将序列拉平
     '''
-    next_batch_dec_src_ids = []
+    next_batch = []
     for i in range(len(batch_pred)):
         pred = batch_pred[i]
         enc_src_ids = batch_enc_src_ids[i]
@@ -435,13 +437,13 @@ def flat_sequence(
             next_dec_src_ids.append(dec_src_ids[j])
             if pred[j] in dic_pos_cls:
                 next_dec_src_ids.append(enc_src_ids[pred[j]-1])
-        next_batch_dec_src_ids.append(next_dec_src_ids)
-    next_batch_dec_src_ids, mask = padding(
-        next_batch_dec_src_ids, pad_value)
-    next_batch_dec_src_ids = torch.tensor(
-        next_batch_dec_src_ids, dtype=torch.long, device=device)
+        next_batch.append(next_dec_src_ids)
+    next_batch_padded, mask = padding(
+        next_batch, pad_value)
+    next_batch_padded = torch.tensor(
+        next_batch_padded, dtype=torch.long, device=device)
     next_dec_mask = torch.tensor(mask, dtype=torch.bool, device=device)
-    return next_batch_dec_src_ids, next_dec_mask
+    return next_batch_padded, next_dec_mask, next_batch
 
         
 

@@ -161,6 +161,7 @@ class HiBart(nn.Module):
                     dec_src_ids, dec_mask)
                 batch_loss += self.loss_fn(
                     logits, dec_targ_pos, dec_mask)
+            return batch_loss
         else:
             '''预测过程，执行后解码，解码结果再给到decoder'''
             dec_src_ids=dec_src_ids_bund[0]
@@ -173,7 +174,7 @@ class HiBart(nn.Module):
                     dec_src_ids, dec_mask)
                 batch_pred = torch.argmax(logits, dim=-1)
                 batch_pred = batch_pred.masked_fill(dec_mask.eq(0), -1)
-                dec_src_ids, dec_mask = flat_sequence(
+                dec_src_ids, dec_mask, dec_src_ids_unpadded = flat_sequence(
                     batch_pred, 
                     batch_enc_src_ids=enc_src_ids, 
                     batch_dec_src_ids=dec_src_ids,
@@ -181,7 +182,6 @@ class HiBart(nn.Module):
                     pad_value=self.args['pad_value'],
                     device=self.args['device']
                 )
-
-        return batch_loss
+            return dec_src_ids_unpadded
 
 
