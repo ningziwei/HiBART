@@ -150,7 +150,6 @@ def evaluate(model, loader, rotate_pos_cls):
         model.eval()
         predicts, labels = [], []
         for batch in loader:
-            step += 1
             pred = model(
                 batch['enc_src_ids'],
                 batch['enc_src_len'],
@@ -160,6 +159,8 @@ def evaluate(model, loader, rotate_pos_cls):
             )
             predicts += [get_targ_ents(p, rotate_pos_cls) for p in pred]
             labels += batch['targ_ents']
+            for p, lab in zip(pred, batch['targ_ents']):
+                print('163', p, lab)
         ep, er, ef = utils.micro_metrics(predicts, labels)
         model.train()
     return ep, er, ef
@@ -228,17 +229,18 @@ def train():
                     accum_loss = []
             epoch_sched.step()
 
-            valid_metrics = evaluate(model, valid_loader)
-            vep, ver, vef = [m*100 for m in valid_metrics]
-            logger("Epoch %d, valid entity p = %.2f%%, r = %.2f%%, f = %.2f%%" % (epoch + 1, vep, ver, vef))
-            test_metrics = evaluate(model, test_loader)
-            tep, ter, tef = [m*100 for m in test_metrics]
-            logger("Epoch %d, test  entity p = %.2f%%, r = %.2f%%, f = %.2f%%" % (epoch + 1, tep, ter, tef))
-            if tef > best_f1:
-                best_f1 = tef
-                best_epoch = epoch
-                torch.save(model.state_dict(), os.path.join(OUTPUT_DIR, "snapshot.model"))
-                logger("Epoch %d, save model." % (epoch+1))
+            if epoch>=5:
+                valid_metrics = evaluate(model, valid_loader, rotate_pos_cls)
+                vep, ver, vef = [m*100 for m in valid_metrics]
+                logger("Epoch %d, valid entity p = %.2f%%, r = %.2f%%, f = %.2f%%" % (epoch + 1, vep, ver, vef))
+                test_metrics = evaluate(model, test_loader, rotate_pos_cls)
+                tep, ter, tef = [m*100 for m in test_metrics]
+                logger("Epoch %d, test  entity p = %.2f%%, r = %.2f%%, f = %.2f%%" % (epoch + 1, tep, ter, tef))
+                if tef > best_f1:
+                    best_f1 = tef
+                    best_epoch = epoch
+                    torch.save(model.state_dict(), os.path.join(OUTPUT_DIR, "snapshot.model"))
+                    logger("Epoch %d, save model." % (epoch+1))
         logger("Best epoch %d, best entity f1: %.2f%%" % (best_epoch+1, best_f1))
         logger.fp.close()
     except KeyboardInterrupt:

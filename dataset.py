@@ -69,7 +69,10 @@ def collate_fn(batch_data, pad_value=0, device=torch.device("cpu")):
     
     dec_src_ids, mask = padding(
         [d["dec_src_ids"] for d in batch_data], pad_value, dim=3)
+    dec_src_pos, mask = padding(
+        [d["dec_src_pos"] for d in batch_data], pad_value, dim=3)
     padded_batch["dec_src_ids_bund"] = torch.tensor(dec_src_ids, dtype=torch.long, device=device)
+    padded_batch["dec_src_pos_bund"] = torch.tensor(dec_src_pos, dtype=torch.long, device=device)
     padded_batch["dec_mask_bund"] = torch.tensor(mask, dtype=torch.bool, device=device)
     
     dec_targ_pos, mask = padding(

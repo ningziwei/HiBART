@@ -20,7 +20,7 @@ def micro_metrics(predicts, labels):
                 true_count += 1
         predict_count += len(pred_entity)
         gold_count += len(gold_entity)
-    ep = true_count / predict_count
+    ep = true_count / max(predict_count, 1)
     er = true_count / gold_count
-    ef = 2 * ep * er / (ep + er)
+    ef = 2 * ep * er / max((ep + er), 0.0001)
     return ep, er, ef
