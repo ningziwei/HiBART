@@ -7,10 +7,10 @@
     "prefix": "HiBart",
     "batch_size": 10,
     "group_interval": 20,
-    "epochs": 30,
+    "epochs": 50,
     "lr": 1e-5,
-    "scheduler_step": 20,
+    "scheduler_step": [25,40],
     "grad_accum_step": 1,
-    "show_loss_step": 20,
+    "show_loss_step": 50,
     "static_eos": 0
 }

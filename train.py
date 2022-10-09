@@ -117,7 +117,7 @@ def get_model(config, dic_cls_id):
         num_warmup_steps=0.1*total_step,
         num_training_steps=total_step)
     epoch_sched = optim.lr_scheduler.MultiStepLR(
-        optimizer, [config["scheduler_step"]], gamma=0.1)
+        optimizer, config["scheduler_step"], gamma=0.1)
     return model, optimizer, batch_sched, epoch_sched
 
 def test_nan(model):
@@ -155,7 +155,7 @@ def train():
         tokenizer = get_tokenizer(config)
         config['eos_id'] = tokenizer.eos_token_id
         config['pad_value'] = tokenizer.pad_token_id
-        config['dic_order_cls'] = tokenizer.dic_order_cls
+        config['dic_hir_pos_cls'] = tokenizer.dic_hir_pos_cls
         loaders = get_data_loader(config, tokenizer)
         train_loader, test_loader, valid_loader = loaders
         config["total_steps"] = config["epochs"] * len(train_loader)
