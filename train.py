@@ -99,7 +99,7 @@ def init_cls_token(bart, dic_cls_id, triv_tokenizer):
         embed /= len(char_idx)
         bart.encoder.embed_tokens.weight.data[val] = embed
 
-def get_model(config, dic_cls_id):
+def get_model_optim_sched(config, dic_cls_id):
     '''初始化模型、优化器、学习率函数'''
     device = config['device']
     model_path = config['bart_path']
@@ -150,17 +150,21 @@ def evaluate(model, loader, rotate_pos_cls):
         model.eval()
         predicts, labels = [], []
         for batch in loader:
+            if len(batch['targ_ents'][0])==0: continue
             pred = model(
                 batch['enc_src_ids'],
                 batch['enc_src_len'],
                 batch['enc_mask'],
-                batch['dec_src_ids_bund'],
-                batch['dec_mask_bund']
+                dec_src_ids_bund=batch['dec_src_ids_bund'],
+                dec_src_pos_bund=batch['dec_src_pos_bund'],
+                dec_mask_bund=batch['dec_mask_bund']
             )
+            # print('train 161', batch['targ_ents'][0])
+            # time.sleep(2)
             predicts += [get_targ_ents(p, rotate_pos_cls) for p in pred]
             labels += batch['targ_ents']
-            for p, lab in zip(pred, batch['targ_ents']):
-                print('163', p, lab)
+            # for p, lab in zip(pred, batch['targ_ents']):
+            #     print('163', p, lab)
         ep, er, ef = utils.micro_metrics(predicts, labels)
         model.train()
     return ep, er, ef
@@ -180,8 +184,8 @@ def train():
         loaders = get_data_loader(config, data_dealer)
         train_loader, test_loader, valid_loader = loaders
         config["total_steps"] = config["epochs"] * len(train_loader)
-        models = get_model(config, tokenizer.dic_cls_id)
-        model, optimizer, batch_sched, epoch_sched = models
+        m_o_s = get_model_optim_sched(config, tokenizer.dic_cls_id)
+        model, optimizer, batch_sched, epoch_sched = m_o_s
         logger("Init model.")
     except KeyboardInterrupt:
         logger("Interrupted.")
@@ -198,7 +202,7 @@ def train():
     try:
         logger("Begin training.")
         accum_loss = []
-        best_f1, best_f1_word = 0., 0.
+        best_f1 = 0.
         best_epoch = -1
         optimizer.zero_grad()
         step = 0
@@ -206,14 +210,18 @@ def train():
             model.train()
             for batch in train_loader:
                 step += 1
-                loss = model(
+                loss, pred = model(
                     batch['enc_src_ids'],
                     batch['enc_src_len'],
                     batch['enc_mask'],
-                    batch['dec_src_ids_bund'],
-                    batch['dec_mask_bund'],
-                    batch['dec_targ_pos_bund']
+                    dec_src_ids_bund=batch['dec_src_ids_bund'],
+                    dec_mask_bund=batch['dec_mask_bund'],
+                    dec_targ_pos_bund=batch['dec_targ_pos_bund']
                 )
+                if (step+1)%70==0:
+                    for p, lab in zip(pred, batch['targ_ents']):
+                        p = [x.item() for x in p]
+                        print('219', p, lab)
                 loss.backward()
                 if step % int(config["grad_accum_step"]) == 0:
                     optimizer.step()
@@ -236,7 +244,7 @@ def train():
                 test_metrics = evaluate(model, test_loader, rotate_pos_cls)
                 tep, ter, tef = [m*100 for m in test_metrics]
                 logger("Epoch %d, test  entity p = %.2f%%, r = %.2f%%, f = %.2f%%" % (epoch + 1, tep, ter, tef))
-                if tef > best_f1:
+                if tef >= best_f1:
                     best_f1 = tef
                     best_epoch = epoch
                     torch.save(model.state_dict(), os.path.join(OUTPUT_DIR, "snapshot.model"))
@@ -251,8 +259,38 @@ def train():
         logger("Got exception.")
         logger.fp.close()
         print(traceback.format_exc())
+
+def predict():
+    config_path = 'config.json'
+    state_dict_path = 'HiBart_202210091847/snapshot.model'
+    with open(config_path, encoding="utf-8") as fp:
+        config = json.load(fp)
+    state_dict_path = os.path.join(config["output_path"], state_dict_path)
+    config['device'] = device
+    # 初始化分词器、数据集和模型
+    tokenizer = get_tokenizer(config)
+    config['eos_id'] = tokenizer.eos_token_id
+    config['pad_value'] = tokenizer.pad_token_id
+    config['dic_hir_pos_cls'] = tokenizer.dic_hir_pos_cls
+    data_dealer = DataDealer(tokenizer)
+    rotate_pos_cls = data_dealer.rotate_pos_cls
+    loaders = get_data_loader(config, data_dealer)
+    train_loader, test_loader, valid_loader = loaders
+    config["total_steps"] = config["epochs"] * len(train_loader)
+    model = get_model_optim_sched(config, tokenizer.dic_cls_id)[0]
+
+    model.load_state_dict(torch.load(state_dict_path))
+    valid_metrics = evaluate(model, valid_loader, rotate_pos_cls)
+    vep, ver, vef = [m*100 for m in valid_metrics]
+    print("Epoch %d, valid entity p = %.2f%%, r = %.2f%%, f = %.2f%%" % (1, vep, ver, vef))
+    test_metrics = evaluate(model, test_loader, rotate_pos_cls)
+    tep, ter, tef = [m*100 for m in test_metrics]
+    print("Epoch %d, test  entity p = %.2f%%, r = %.2f%%, f = %.2f%%" % (1, tep, ter, tef))
+
     
+
 if __name__=='__main__':
     torch.autograd.set_detect_anomaly(True)
     with torch.autograd.detect_anomaly():
         train()
+    # predict()
