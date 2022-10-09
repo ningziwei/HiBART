@@ -183,11 +183,11 @@ class DataDealer:
         targ_ids_bund = [self.tokens_to_ids(tks) for tks in targ_bund]
         sent_pos_bund = [[0]+pos+[1] for pos in sent_pos_bund]
         targ_pos_bund = [[0]+pos+[1] for pos in targ_pos_bund]
-        targ_ents = self.get_targ_ents(sent_pos_bund[-1], self.rotate_pos_cls)
+        targ_ents = get_targ_ents(sent_pos_bund[-1], self.rotate_pos_cls)
         # print(sent_bund, targ_bund)
         # print(sent_ids_bund, sent_pos_bund)
         # print(targ_ids_bund, targ_pos_bund)
-        dec_src_ids, dec_targ_pos = self.get_dec_src_tar(
+        dec_src_ids, dec_src_pos, dec_targ_pos = self.get_dec_src_tar(
             sent_bund, targ_bund,
             sent_ids_bund, sent_pos_bund, 
             targ_ids_bund, targ_pos_bund)
@@ -204,6 +204,7 @@ class DataDealer:
             'enc_src_ids': enc_src_ids,
             'enc_src_len': len(enc_src_ids),
             'dec_src_ids': dec_src_ids,
+            'dec_src_pos': dec_src_pos,
             'dec_targ_pos': dec_targ_pos,
             'targ_ents': targ_ents
         }
@@ -352,7 +353,7 @@ class DataDealer:
             # print(dec_targ_toks[-1])
             # print(dec_src_ids[-1], dec_targ_ids[-1])
             
-        return dec_src_ids, dec_targ_pos
+        return dec_src_ids, dec_src_pos, dec_targ_pos
 
     
 def padding(data, pad_value=0, dim=2):
@@ -418,6 +419,7 @@ def flat_sequence(
     batch_pred, 
     batch_enc_src_ids, 
     batch_dec_src_ids,
+    batch_dec_src_pos,
     dic_pos_cls,
     pad_value=0,
     device=torch.device("cpu")
@@ -425,29 +427,31 @@ def flat_sequence(
     '''
     根据解码结果，将序列拉平
     '''
-    next_batch = []
+    next_ids = []
+    next_pos = []
     for i in range(len(batch_pred)):
         pred = batch_pred[i]
         enc_src_ids = batch_enc_src_ids[i]
         dec_src_ids = batch_dec_src_ids[i]
+        dec_src_pos = batch_dec_src_pos[i]
         next_dec_src_ids = []
+        next_dec_src_pos = []
         for j in range(len(dec_src_ids)):
             if dec_src_ids[j]==-1: continue
             # print(pred[j], enc_src_ids[pred[j]-1])
-            next_dec_src_ids.append(dec_src_ids[j])
+            next_dec_src_ids.append(dec_src_ids[j].item())
+            next_dec_src_pos.append(dec_src_pos[j].item())
             if pred[j] in dic_pos_cls:
-                next_dec_src_ids.append(enc_src_ids[pred[j]-1])
-        next_batch.append(next_dec_src_ids)
-    next_batch_padded, mask = padding(
-        next_batch, pad_value)
-    next_batch_padded = torch.tensor(
-        next_batch_padded, dtype=torch.long, device=device)
+                next_dec_src_ids.append(enc_src_ids[pred[j]-1].item())
+                next_dec_src_pos.append(pred[j].item())
+        next_ids.append(next_dec_src_ids)
+        next_pos.append(next_dec_src_pos)
+    next_ids_padded, mask = padding(next_ids, pad_value)
+    next_ids_padded = torch.tensor(next_ids_padded, dtype=torch.long, device=device)
     next_dec_mask = torch.tensor(mask, dtype=torch.bool, device=device)
-    return next_batch_padded, next_dec_mask, next_batch
-
-        
-
-        
+    next_pos_padded, _ = padding(next_pos, pad_value)
+    next_pos_padded = torch.tensor(next_pos_padded, dtype=torch.long, device=device)
+    return next_ids_padded, next_pos_padded, next_dec_mask, next_pos
 
 
     

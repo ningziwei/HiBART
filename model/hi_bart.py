@@ -118,7 +118,8 @@ class HiBart(nn.Module):
 
     def forward(
         self, enc_src_ids, enc_src_len, enc_mask, 
-        dec_src_ids_bund=None, dec_mask_bund=None, dec_targ_pos_bund=None
+        dec_src_ids_bund=None, dec_src_pos_bund=None,
+        dec_mask_bund=None, dec_targ_pos_bund=None
     ):
         '''
         enc_src_ids: batch_size*enc_max_len
@@ -164,8 +165,10 @@ class HiBart(nn.Module):
             return batch_loss
         else:
             '''预测过程，执行后解码，解码结果再给到decoder'''
-            dec_src_ids=dec_src_ids_bund[0]
-            dec_mask=dec_mask_bund[0]
+            dec_src_pos_bund = dec_src_pos_bund.permute(1,0,2)
+            dec_src_ids = dec_src_ids_bund[0]
+            dec_src_pos = dec_src_pos_bund[0]
+            dec_mask = dec_mask_bund[0]
             dic_hir_pos_cls=self.args['dic_hir_pos_cls']
             for i in range(3):
                 logits = self.hi_decoder(
@@ -173,15 +176,22 @@ class HiBart(nn.Module):
                     enc_src_len, enc_mask,
                     dec_src_ids, dec_mask)
                 batch_pred = torch.argmax(logits, dim=-1)
-                batch_pred = batch_pred.masked_fill(dec_mask.eq(0), -1)
-                dec_src_ids, dec_mask, dec_src_ids_unpadded = flat_sequence(
-                    batch_pred, 
+                dec_src_ids = dec_src_ids.masked_fill(dec_mask.eq(0), -1)
+                # print('hi_bart 177', dec_mask)
+                # print('hi_bart 178', batch_pred)
+                dec_src_ids, dec_src_pos, dec_mask, dec_src_pos_unpadded = flat_sequence(
+                    batch_pred,
                     batch_enc_src_ids=enc_src_ids, 
                     batch_dec_src_ids=dec_src_ids,
+                    batch_dec_src_pos=dec_src_pos,
                     dic_pos_cls=dic_hir_pos_cls[i],
                     pad_value=self.args['pad_value'],
                     device=self.args['device']
                 )
-            return dec_src_ids_unpadded
+                # print('hi_bart dec_src_ids_unpadded', dec_src_ids_unpadded)
+                # print('hi_bart dec_src_ids', dec_src_ids)
+                # print('hi_bart dec_mask', dec_mask)
+            print('hi_bart 194', dec_src_pos_unpadded)
+            return dec_src_pos_unpadded
 
 
