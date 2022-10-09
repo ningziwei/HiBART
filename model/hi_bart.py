@@ -162,7 +162,8 @@ class HiBart(nn.Module):
                     dec_src_ids, dec_mask)
                 batch_loss += self.loss_fn(
                     logits, dec_targ_pos, dec_mask)
-            return batch_loss
+            batch_pred = torch.argmax(logits, dim=-1)
+            return batch_loss, batch_pred
         else:
             '''预测过程，执行后解码，解码结果再给到decoder'''
             dec_src_pos_bund = dec_src_pos_bund.permute(1,0,2)
@@ -170,6 +171,8 @@ class HiBart(nn.Module):
             dec_src_pos = dec_src_pos_bund[0]
             dec_mask = dec_mask_bund[0]
             dic_hir_pos_cls=self.args['dic_hir_pos_cls']
+            # print('174', dec_src_ids[0])
+            # print('175', dec_src_pos[0])
             for i in range(3):
                 logits = self.hi_decoder(
                     enc_output, src_embed,
@@ -177,21 +180,25 @@ class HiBart(nn.Module):
                     dec_src_ids, dec_mask)
                 batch_pred = torch.argmax(logits, dim=-1)
                 dec_src_ids = dec_src_ids.masked_fill(dec_mask.eq(0), -1)
-                # print('hi_bart 177', dec_mask)
-                # print('hi_bart 178', batch_pred)
+                # print('183', batch_pred[0])
+                # print('184', enc_src_ids[0])
+                # print('185', dec_src_ids[0])
+                # print('186', dec_src_pos[0])
+                # print('187', dic_hir_pos_cls[i])
                 dec_src_ids, dec_src_pos, dec_mask, dec_src_pos_unpadded = flat_sequence(
-                    batch_pred,
-                    batch_enc_src_ids=enc_src_ids, 
-                    batch_dec_src_ids=dec_src_ids,
-                    batch_dec_src_pos=dec_src_pos,
+                    batch_pred.cpu().numpy(),
+                    batch_enc_src_ids=enc_src_ids.cpu().numpy(), 
+                    batch_dec_src_ids=dec_src_ids.cpu().numpy(),
+                    batch_dec_src_pos=dec_src_pos.cpu().numpy(),
                     dic_pos_cls=dic_hir_pos_cls[i],
                     pad_value=self.args['pad_value'],
                     device=self.args['device']
                 )
-                # print('hi_bart dec_src_ids_unpadded', dec_src_ids_unpadded)
-                # print('hi_bart dec_src_ids', dec_src_ids)
-                # print('hi_bart dec_mask', dec_mask)
-            print('hi_bart 194', dec_src_pos_unpadded)
+                # print('194', batch_pred[0])
+                # print('195', dec_src_ids[0])
+                # print('196', dec_src_pos[0])
+                # print('197', dec_src_pos_unpadded[0])
+            # print('hi_bart 194', dec_src_pos_unpadded)
             return dec_src_pos_unpadded
 
 
