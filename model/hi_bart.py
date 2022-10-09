@@ -165,7 +165,8 @@ class HiBart(nn.Module):
             '''预测过程，执行后解码，解码结果再给到decoder'''
             dec_src_ids=dec_src_ids_bund[0]
             dec_mask=dec_mask_bund[0]
-            for _ in range(3):
+            dic_hir_pos_cls=self.args['dic_hir_pos_cls']
+            for i in range(3):
                 logits = self.hi_decoder(
                     enc_output, src_embed,
                     enc_src_len, enc_mask,
@@ -176,7 +177,7 @@ class HiBart(nn.Module):
                     batch_pred, 
                     batch_enc_src_ids=enc_src_ids, 
                     batch_dec_src_ids=dec_src_ids,
-                    dic_order_cls=self.args['dic_order_cls'],
+                    dic_pos_cls=dic_hir_pos_cls[i],
                     pad_value=self.args['pad_value'],
                     device=self.args['device']
                 )

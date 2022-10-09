@@ -32,7 +32,7 @@ def parse_CoNLL_file(filename):
         sentences.pop()
     return sentences
 
-def parse_label(sentences, cls_token_path, ent_end_tok='<<ent_end>>'):
+def parse_label(sentences, cls_token_path=None, ent_end_tok='<<ent_end>>'):
     '''
     得到实体抽取数据集的所有标签和实体类别
     new_tokens_bundle: [
@@ -53,18 +53,19 @@ def parse_label(sentences, cls_token_path, ent_end_tok='<<ent_end>>'):
     new_tokens = []
     start_tokens = []
     end_tokens = []
+    ent_end_token = [ent_end_tok]
     for _, v in cls_tok_dic.items():
         new_tokens += v
         start_tokens.append(v[0])
         end_tokens.append(v[1])
     new_tokens.append(ent_end_tok)
-    end_tokens.append(ent_end_tok)
     cls_token_cache = {
         'cls_tok_dic': cls_tok_dic,
-        'new_tokens_bundle': [new_tokens, start_tokens, end_tokens]
+        'new_tokens_bundle': [new_tokens, start_tokens, end_tokens, ent_end_token]
     }
-    with open(cls_token_path, 'w', encoding='utf8') as f:
-        json.dump(cls_token_cache, f)
+    if cls_token_path is not None:
+        with open(cls_token_path, 'w', encoding='utf8') as f:
+            json.dump(cls_token_cache, f)
     return cls_token_cache
 
 def parse_txt(tokenizer, sent):
@@ -76,7 +77,7 @@ class MyTokenizer(BertTokenizer):
     def add_special_tokens(self, cls_tok_dic, new_tokens_bundle):
         '''将表示实体边界的特殊标记添加到分词器中''' 
         self.cls_tok_dic = cls_tok_dic
-        new_tokens, start_tokens, end_tokens = new_tokens_bundle
+        new_tokens, start_tokens, end_tokens, ent_end_token = new_tokens_bundle
         self.unique_no_split_tokens += new_tokens
         self.add_tokens(new_tokens)
 
@@ -88,13 +89,19 @@ class MyTokenizer(BertTokenizer):
         dic_cls_pos = {k:v+2 for k,v in dic_cls_order.items()}
         dic_start_pos_cls = {dic_cls_pos[k]:k for k in start_tokens}
         dic_end_pos_cls = {dic_cls_pos[k]:k for k in end_tokens}
-        
+        dic_ent_end_pos_cls = {dic_cls_pos[k]:k for k in ent_end_token}
+        dic_all_end_pos_cls = dic_end_pos_cls.copy()
+        dic_all_end_pos_cls[dic_cls_pos[ent_end_token[0]]] = ent_end_token[0]
+
         self.dic_cls_id = dic_cls_id
         self.dic_cls_order = dic_cls_order
         self.dic_order_cls = {v:k for k,v in dic_cls_order.items()}
         self.dic_cls_pos = dic_cls_pos
+        self.dic_hir_pos_cls = [dic_start_pos_cls, dic_ent_end_pos_cls, dic_end_pos_cls]
         self.dic_start_pos_cls = dic_start_pos_cls
+        self.dic_ent_end_pos_cls = dic_ent_end_pos_cls
         self.dic_end_pos_cls = dic_end_pos_cls
+        self.dic_all_end_pos_cls = dic_all_end_pos_cls
         
 class DataDealer:
     def __init__(
@@ -348,7 +355,7 @@ class DataDealer:
         i, N = 0, len(pos_list)
         rotate_pos_cls = []
         rotate_pos_cls.append(self.tokenizer.dic_start_pos_cls)
-        rotate_pos_cls.append(self.tokenizer.dic_end_pos_cls)
+        rotate_pos_cls.append(self.tokenizer.dic_all_end_pos_cls)
 
         ents = []
         while i<N:
@@ -409,7 +416,7 @@ def flat_sequence(
     batch_pred, 
     batch_enc_src_ids, 
     batch_dec_src_ids,
-    dic_order_cls,
+    dic_pos_cls,
     pad_value=0,
     device=torch.device("cpu")
 ):
@@ -421,14 +428,14 @@ def flat_sequence(
         pred = batch_pred[i]
         enc_src_ids = batch_enc_src_ids[i]
         dec_src_ids = batch_dec_src_ids[i]
-        next_dec_src_ids_next = []
+        next_dec_src_ids = []
         for j in range(len(dec_src_ids)):
             if dec_src_ids[j]==-1: continue
-            next_dec_src_ids_next.append(dec_src_ids[j])
-            if pred[j]-2 in dic_order_cls:
-                next_dec_src_ids_next.append(
-                    enc_src_ids[pred[j]-1])
-        next_batch_dec_src_ids.append(enc_src_ids)
+            # print(pred[j], enc_src_ids[pred[j]-1])
+            next_dec_src_ids.append(dec_src_ids[j])
+            if pred[j] in dic_pos_cls:
+                next_dec_src_ids.append(enc_src_ids[pred[j]-1])
+        next_batch_dec_src_ids.append(next_dec_src_ids)
     next_batch_dec_src_ids, mask = padding(
         next_batch_dec_src_ids, pad_value)
     next_batch_dec_src_ids = torch.tensor(
