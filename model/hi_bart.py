@@ -119,7 +119,8 @@ class HiBart(nn.Module):
     def forward(
         self, enc_src_ids, enc_src_len, enc_mask, 
         dec_src_ids_bund=None, dec_src_pos_bund=None,
-        dec_mask_bund=None, dec_targ_pos_bund=None
+        dec_mask_bund=None, dec_targ_pos_bund=None,
+        train_range=range(3)
     ):
         '''
         enc_src_ids: batch_size*enc_max_len
@@ -152,7 +153,7 @@ class HiBart(nn.Module):
             '''训练过程，三段训练依次进行，各loss求和后一起更新'''
             dec_targ_pos_bund = dec_targ_pos_bund.permute(1,0,2)
             batch_loss = 0
-            for i in range(len(dec_targ_pos_bund)):
+            for i in train_range:
                 dec_src_ids = dec_src_ids_bund[i]
                 dec_mask = dec_mask_bund[i]
                 dec_targ_pos = dec_targ_pos_bund[i]

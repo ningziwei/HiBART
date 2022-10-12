@@ -1,6 +1,6 @@
 {
     "data_dir": "/data1/nzw/CNER",
-    "dataset": "weibo_conll",
+    "dataset": "ontonotes4_4_conll",
     "vocab_dir": "vocab",
     "bart_path": "/data1/nzw/model/bart-base-chinese/",
     "output_path": "/data1/nzw/model_saved/HiBart",
