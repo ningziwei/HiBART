@@ -169,6 +169,18 @@ def evaluate(model, loader, rotate_pos_cls):
         model.train()
     return ep, er, ef
 
+def get_train_range(epoch):
+    '''
+    根据epoch生成不同的range
+    控制用哪一阶段做训练
+    '''
+    if epoch<10:
+        return range(1)
+    elif epoch<20:
+        return range(2)
+    else:
+        return range(3)
+
 def train():
     config_path = 'config.json'
     config, logger, OUTPUT_DIR = get_config_logger_dir(config_path)
@@ -208,6 +220,7 @@ def train():
         step = 0
         for epoch in range(config["epochs"]):
             model.train()
+            train_range = get_train_range(epoch)
             for batch in train_loader:
                 step += 1
                 loss, pred = model(
@@ -216,12 +229,13 @@ def train():
                     batch['enc_mask'],
                     dec_src_ids_bund=batch['dec_src_ids_bund'],
                     dec_mask_bund=batch['dec_mask_bund'],
-                    dec_targ_pos_bund=batch['dec_targ_pos_bund']
+                    dec_targ_pos_bund=batch['dec_targ_pos_bund'],
+                    train_range=train_range
                 )
-                if (step+1)%70==0:
-                    for p, lab in zip(pred, batch['targ_ents']):
-                        p = [x.item() for x in p]
-                        print('219', p, lab)
+                # if (step+1)%70==0:
+                #     for p, lab in zip(pred, batch['targ_ents']):
+                #         p = [x.item() for x in p]
+                #         print('219', p, lab)
                 loss.backward()
                 if step % int(config["grad_accum_step"]) == 0:
                     optimizer.step()
@@ -237,7 +251,7 @@ def train():
                     accum_loss = []
             epoch_sched.step()
 
-            if epoch>=5:
+            if epoch>=25:
                 valid_metrics = evaluate(model, valid_loader, rotate_pos_cls)
                 vep, ver, vef = [m*100 for m in valid_metrics]
                 logger("Epoch %d, valid entity p = %.2f%%, r = %.2f%%, f = %.2f%%" % (epoch + 1, vep, ver, vef))

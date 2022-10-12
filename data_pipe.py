@@ -19,17 +19,30 @@ def parse_CoNLL_file(filename):
     fp.close()
     for line in lines:
         line = line.strip()
+        # print(repr(line))
         if not line:
-            if not sentences or len(sentences[-1]):
+            if not len(sentences):
+                '''去掉开头的空行'''
+                continue
+            if len(sentences[-1]):
+                '''句子后的第一个空行'''
                 sentences.append([])
+                continue
+            if not len(sentences[-1]):
+                '''空行前还是空行'''
+                continue
+        if line and not len(sentences):
+            '''开头第一个token'''
+            sentences.append([])
             continue
         line_strlist = line.split()
         if line_strlist[0] != "-DOCSTART-":
             word = line_strlist[0]
             tag = line_strlist[-1].lower()
             sentences[-1].append({'word':word, 'tag':tag})
-    if not sentences[-1]:
-        sentences.pop()
+    sentences = [s for s in sentences if len(s)]
+    # if not sentences[-1]:
+    #     sentences.pop()
     return sentences
 
 def parse_label(sentences, cls_token_path=None, ent_end_tok='<<ent_end>>'):
@@ -313,6 +326,7 @@ class DataDealer:
         targ_pos_bund.append([x['pos'] for x in targ2])
         for i, (sent, targ, sent_pos, targ_pos) in enumerate(zip(
             sent_bund, targ_bund, sent_pos_bund, targ_pos_bund)):
+            print('data_pipe 329', sent, targ)
             if targ[0] not in dic_cls_pos:
                 targ_bund[i] = [sent[0]] + targ
                 targ_pos_bund[i] = [sent_pos[0]] + targ_pos
