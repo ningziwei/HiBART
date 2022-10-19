@@ -304,6 +304,7 @@ class BartEncoder(nn.Module):
         # print('mod bart 296', config.static_position_embeddings)
         # print('mod bart 298', config.tag_num)
         # print('mod bart 299', config.max_position_embeddings)
+        # print(config.tag_num)
         if config.static_position_embeddings:
             self.embed_positions = SinusoidalPositionalEmbedding(
                 config.max_position_embeddings, 

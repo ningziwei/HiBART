@@ -40,17 +40,17 @@ class CrossEntropyLossWithMask(nn.Module):
         pred_util = pred - torch.max(pred, 2).values.unsqueeze(-1)
         logsoftmax = pred_util-torch.log(torch.sum(torch.exp(pred_util), dim = -1).reshape(pred.shape[0], -1, 1))
         nllloss_tgt = -torch.sum(one_hot_tgt*logsoftmax)/torch.sum(1-mask.float())
-        print('nllloss_tgt', nllloss_tgt)
+        # print('nllloss_tgt', nllloss_tgt)
         # print('pred', pred.shape, pred[0])
         # print('tgt_tokens', tgt_tokens.shape, tgt_tokens[0])
         # print('mask', mask.shape, mask[0])
         # print('one_hot_tgt', one_hot_tgt.shape, one_hot_tgt[0])
         # print('pred_util', pred_util.shape, pred_util[0])
         # print('logsoftmax', logsoftmax.shape, logsoftmax[0])
-        print('50', torch.sum(1-mask.float()))
+        # print('50', torch.sum(1-mask.float()))
         tmp = pred
         for i in range(tmp.size(0)):
-            print('52', i)
+            # print('52', i)
             for j in range(tmp.size(1)):
                 for k in range(tmp.size(2)):
                     if tmp[i][j][k]>100 or tmp[i][j][k]<-100 or torch.isnan(tmp[i][j][k]):

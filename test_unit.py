@@ -31,19 +31,21 @@ def test_my_tokenizer():
 def test_data_dealer():
     from data_pipe import parse_CoNLL_file, parse_label
     from data_pipe import MyTokenizer, DataDealer
-    file_path = '/data1/nzw/CNER/weibo_conll/test.test'
+    file_path = '/data1/nzw/CNER/weibo_conll/train.train'
     sentences = parse_CoNLL_file(file_path)
-    cls_tok_dic, new_tokens_bundle = parse_label(sentences)
+    cls_token_cache = parse_label(sentences)
+    cls_tok_dic = cls_token_cache['cls_tok_dic']
+    new_tokens_bundle = cls_token_cache['new_tokens_bundle']
 
     model_path = '/data1/nzw/model/bart-base-chinese/'
     my_tknzr = MyTokenizer.from_pretrained(model_path)
     my_tknzr.add_special_tokens(cls_tok_dic, new_tokens_bundle)
     
     data_dealer = DataDealer(my_tknzr)
-    sent = sentences[0]
-    sent = [
-        {'word':'感','tag':'o'},{'word':'动','tag':'o'},
-        {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'}]
+    # sent = sentences[0]
+    # sent = [
+    #     {'word':'感','tag':'o'},{'word':'动','tag':'o'},
+    #     {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'}]
     # sent = [
     #     {'word':'感','tag':'o'},{'word':'动','tag':'o'}]
     # sent = [
@@ -51,20 +53,22 @@ def test_data_dealer():
     #     {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'},
     #     {'word':'人','tag':'b-per.nam'},{'word':'物','tag':'i-per.nam'},
     #     {'word':'物','tag':'o'}]
-    # sent = [
-    #     {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'},
-    #     {'word':'人','tag':'b-per.nam'},{'word':'物','tag':'i-per.nam'},
-    #     ]
-    # res = data_dealer.get_hier_sent(sent)
-    # print(res)
+    sent = [
+        {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'},
+        {'word':'人','tag':'b-per.nam'},{'word':'物','tag':'i-per.nam'},
+        ]
+    sent = [{'word':'感','tag':'o'}]
+    res = data_dealer.get_hier_sent(sent)
+    print(res[0])
+    print(res[1])
     # for s, t in zip(res[0], res[1]):
     #     print(s)
     #     print(t)
     # print('55', res[0][3])
     # ents = data_dealer.get_targ_ents(res[2][-1])
     # print('实体', ents)
-    samp = data_dealer.get_one_sample(sent)
-    print(samp)
+    # samp = data_dealer.get_one_sample(sent)
+    # print(samp)
     # for sent in data_reader.sentences:
     #     data_dealer.get_one_sample(sent)
 
@@ -134,7 +138,40 @@ def test_flat_seq():
         print(res)
         batch_dec_src_ids = res[0]
 
+def calib_pred(preds, end_pos, fold):
+    '''矫正解码的错误'''
+    new_preds = []
+    for ent in preds:
+        for i in range(1,len(ent)):
+            if ent[i] in end_pos and i<len(ent)-(fold-2):
+                print('147', ent)
+                new_preds.append(ent[:i+fold-1])
+                new_ent = ent[1:i]
+                for j in range(1,len(new_ent)):
+                    if new_ent[j]-new_ent[j-1]!=1:
+                        # new_preds[-1] = ent[j:i+2]
+                        new_preds = new_preds[:-1]
+                        # print('159', ent)
+                        # print(ent[j+1:i+2])
+                        break
+                break
+    return new_preds
 
+def test_get_ents():
+    # pos_list = [19, 20,  6, 21, 22, 23,  7, 2, 24, 25,  3, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+    #      35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
+    #      53, 54, 55,  1,  0,  0,  0,  0,  0,  0]
+    # rotate_pos_cls = [[2,6],[3,7]]
+    # print(get_targ_ents_2(pos_list, rotate_pos_cls))
+    rotate_pos_cls = [
+        {2: '<<per.nam-s>>', 4: '<<gpe.nam-s>>', 6: '<<org.nom-s>>', 8: '<<per.nom-s>>', 10: '<<loc.nam-s>>', 12: '<<loc.nom-s>>', 14: '<<gpe.nom-s>>', 16: '<<org.nam-s>>'}, 
+        {3: '<<per.nam-e>>', 5: '<<gpe.nam-e>>', 7: '<<org.nom-e>>', 9: '<<per.nom-e>>', 11: '<<loc.nam-e>>', 13: '<<loc.nom-e>>', 15: '<<gpe.nom-e>>', 17: '<<org.nam-e>>'}]
+    ent_end_pos = 18
+    pred = [[0, 19, 20, 21, 22, 23, 24, 25, 2, 26, 27, 28, 3, 29, 30, 31, 32, 33]]
+    ent_pred = [get_targ_ents_2(p, rotate_pos_cls, ent_end_pos) for p in pred]
+    print(ent_pred)
+    ent_pred = [calib_pred(p, rotate_pos_cls[1], 2) for p in ent_pred]
+    print(ent_pred)
 
 if __name__ == '__main__':
     # test_data_pipe()
@@ -142,4 +179,5 @@ if __name__ == '__main__':
     # test_data_dealer()
     # test_random_sampler()
     # test_data_loader()
-    test_flat_seq()
+    # test_flat_seq()
+    test_get_ents()

@@ -41,8 +41,6 @@ def parse_CoNLL_file(filename):
             tag = line_strlist[-1].lower()
             sentences[-1].append({'word':word, 'tag':tag})
     sentences = [s for s in sentences if len(s)]
-    # if not sentences[-1]:
-    #     sentences.pop()
     return sentences
 
 def parse_label(sentences, cls_token_path=None, ent_end_tok='<<ent_end>>'):
@@ -87,7 +85,7 @@ def parse_txt(tokenizer, sent):
     return [{'word':tok,'tag':'o'} for tok in tokens]
 
 class MyTokenizer(BertTokenizer):
-    def add_special_tokens(self, cls_tok_dic, new_tokens_bundle):
+    def add_special_tokens(self, cls_tok_dic, new_tokens_bundle, fold=3):
         '''将表示实体边界的特殊标记添加到分词器中''' 
         self.cls_tok_dic = cls_tok_dic
         new_tokens, start_tokens, end_tokens, ent_end_token = new_tokens_bundle
@@ -108,9 +106,12 @@ class MyTokenizer(BertTokenizer):
 
         self.dic_cls_id = dic_cls_id
         self.dic_cls_order = dic_cls_order
-        self.dic_order_cls = {v:k for k,v in dic_cls_order.items()}
         self.dic_cls_pos = dic_cls_pos
-        self.dic_hir_pos_cls = [dic_start_pos_cls, dic_ent_end_pos_cls, dic_end_pos_cls]
+        self.dic_order_cls = {v:k for k,v in dic_cls_order.items()}
+        if fold==3:
+            self.dic_hir_pos_cls = [dic_start_pos_cls, dic_ent_end_pos_cls, dic_end_pos_cls]
+        else:
+            self.dic_hir_pos_cls = [dic_start_pos_cls, dic_end_pos_cls]
         self.dic_start_pos_cls = dic_start_pos_cls
         self.dic_ent_end_pos_cls = dic_ent_end_pos_cls
         self.dic_end_pos_cls = dic_end_pos_cls
@@ -118,7 +119,7 @@ class MyTokenizer(BertTokenizer):
         
 class DataDealer:
     def __init__(
-        self, tokenizer, ent_end_tok='<<ent_end>>'
+        self, tokenizer, ent_end_tok='<<ent_end>>', fold=3
     ):
         self.tokenizer = tokenizer
         self.ent_end_tok = ent_end_tok
@@ -127,6 +128,11 @@ class DataDealer:
         rotate_pos_cls.append(tokenizer.dic_start_pos_cls)
         rotate_pos_cls.append(tokenizer.dic_all_end_pos_cls)
         self.rotate_pos_cls = rotate_pos_cls
+        if fold==3:
+            self.get_hier_sent = self.get_three_sent
+        else:
+            self.get_hier_sent = self.get_two_sent
+
 
     def get_one_sample(self, sent):
         '''
@@ -222,7 +228,7 @@ class DataDealer:
             'targ_ents': targ_ents
         }
 
-    def get_hier_sent(self, sent):
+    def get_three_sent(self, sent):
         '''
         生成分层的输入文本和目标文本以及在源文本的位置
         认为0对应bos，1对应eos，特殊标记从2开始算，特殊标记后面才是原始文本
@@ -257,7 +263,7 @@ class DataDealer:
         word_shift = len(dic_cls_pos) + 2
         for i,s in enumerate(sent):
             s['pos'] = i + word_shift
-        
+        # print('258', sent)
         sent_bund = [[s['word'] for s in sent]]
         targ_bund = []
         sent_pos_bund = [[s['pos'] for s in sent]]
@@ -282,7 +288,7 @@ class DataDealer:
         targ_bund.append([x['word'] for x in targ1])
         sent_pos_bund.append([x['pos'] for x in sent1])
         targ_pos_bund.append([x['pos'] for x in targ1])
-
+        # print('283', targ_bund)
         sent = sent1
         sent1, sent2 = [], []
         targ1, targ2 = [], []
@@ -324,10 +330,105 @@ class DataDealer:
         targ_pos_bund.append([x['pos'] for x in targ1])
         sent_pos_bund.append([x['pos'] for x in sent2])
         targ_pos_bund.append([x['pos'] for x in targ2])
+        # print('325', targ_bund)
+        '''将特殊标记添加到输入句子的前面'''
         for i, (sent, targ, sent_pos, targ_pos) in enumerate(zip(
             sent_bund, targ_bund, sent_pos_bund, targ_pos_bund)):
-            print('data_pipe 329', sent, targ)
-            if targ[0] not in dic_cls_pos:
+            # print('data_pipe 329', sent, targ)
+            if not len(targ) or targ[0] not in dic_cls_pos:
+                # print('330', targ)
+                targ_bund[i] = [sent[0]] + targ
+                targ_pos_bund[i] = [sent_pos[0]] + targ_pos
+        return sent_bund, targ_bund, sent_pos_bund, targ_pos_bund
+
+    def get_two_sent(self, sent):
+        '''
+        生成两段解码的句子
+        认为0对应bos，1对应eos，特殊标记从2开始算，特殊标记后面才是原始文本
+        输入: 源文本sent
+        sent: [
+            {'word':'感','tag':'O'},{'word':'动','tag':'O'},
+            {'word':'中','tag':'B-LOC'},{'word':'国','tag':'I-LOC'}]
+        输出: 渐进式序列生成任务解码器的输入和输出序列及对应位置序列
+        sent_bund: [
+            ['感', '动', '中', '国'], 
+            ['感', '动', '[loc.nam-s]', '中', '国'],
+            ['感', '动', '[loc.nam-s]', '中', '国', '[loc.nam-e]']]
+        targ_bund: [
+            ['感', '动', '<<loc.nam-s>>', '国'], 
+            ['感', '动', '<<loc.nam-s>>', '中', '国', '<<loc.nam-e>>']]
+        sent_pos_bund: [
+            [19, 20, 21, 22], 
+            [19, 20, 10, 21, 22], 
+            [19, 20, 10, 21, 22, 11]]
+        targ_pos_bund:  [
+            [19, 20, 10, 22], 
+            [19, 20, 10, 21, 22, 11]]
+        '''
+        last_w = {'word':'', 'tag':'o'}
+        cls_tok_dic = self.tokenizer.cls_tok_dic
+        dic_cls_pos = self.tokenizer.dic_cls_pos     
+        word_shift = len(dic_cls_pos) + 2
+        for i,s in enumerate(sent):
+            s['pos'] = i + word_shift
+        # print('258', sent)
+        sent_bund = [[s['word'] for s in sent]]
+        targ_bund = []
+        sent_pos_bund = [[s['pos'] for s in sent]]
+        targ_pos_bund = []
+        sent1 = []
+        targ1 = []
+        sent = sent + [last_w]
+        targ_sent = sent[1:] + [last_w]
+        for w, w_tar in zip(sent, targ_sent):
+            if w['tag'].startswith('b-'):
+                word = cls_tok_dic[w['tag'][2:]][0]
+                sent1.append({
+                    'word':word,'tag':'begin','pos':dic_cls_pos[word]
+                })
+                targ1 = targ1[:-1]
+                targ1.append(sent1[-1])
+            if w_tar['word']:
+                targ1.append(w_tar)
+            if w['word']:
+                sent1.append(w)
+        sent_bund.append([x['word'] for x in sent1])
+        targ_bund.append([x['word'] for x in targ1])
+        sent_pos_bund.append([x['pos'] for x in sent1])
+        targ_pos_bund.append([x['pos'] for x in targ1])
+        # print('283', targ_bund)
+        sent = sent1
+        sent2 = []
+        targ2 = []
+        sent = sent + [last_w]
+        targ_sent = sent[1:] + [last_w]
+        w_ = {'word':'', 'tag':''}
+        # print('209', sent)
+        for w, w_tar in zip(sent, targ_sent):
+            if w['tag'] in ['o','begin'] and w_['tag'][:2] in ['i-','b-']:  
+                # 添加实体类别结束标记
+                word = cls_tok_dic[w_['tag'][2:]][1]
+                sent2.append({
+                    'word':word,'tag':'','pos':dic_cls_pos[word]
+                })
+                if w['word']: targ2 = targ2[:-1]
+                targ2.append(sent2[-1])
+            if w_tar['word']:
+                targ2.append(w_tar)
+            if w['word']:
+                sent2.append(w)
+            w_ = w
+        sent_bund.append([x['word'] for x in sent2])
+        targ_bund.append([x['word'] for x in targ2])
+        sent_pos_bund.append([x['pos'] for x in sent2])
+        targ_pos_bund.append([x['pos'] for x in targ2])
+        # print('325', targ_bund)
+        '''将特殊标记添加到输入句子的前面'''
+        for i, (sent, targ, sent_pos, targ_pos) in enumerate(zip(
+            sent_bund, targ_bund, sent_pos_bund, targ_pos_bund)):
+            # print('data_pipe 329', sent, targ)
+            if not len(targ) or targ[0] not in dic_cls_pos:
+                # print('330', targ)
                 targ_bund[i] = [sent[0]] + targ
                 targ_pos_bund[i] = [sent_pos[0]] + targ_pos
         return sent_bund, targ_bund, sent_pos_bund, targ_pos_bund
@@ -427,7 +528,56 @@ def get_targ_ents(pos_list, rotate_pos_cls):
             ents.append(ent)
         else:
             i += 1
+    # print('431', ents)
     return ents
+
+def get_targ_ents_3(pos_list, rotate_pos_cls, ent_end_pos):
+    '''得到序列中的实体'''
+    i, N = 0, len(pos_list)
+
+    ents = []
+    while i<N:
+        # 碰到实体开始符
+        if pos_list[i] in rotate_pos_cls[0]:
+            ent = [pos_list[i]]
+            i += 1
+            while i<N:
+                ent.append(pos_list[i])
+                # 碰到实体结束符
+                if pos_list[i] == ent_end_pos:
+                    i += 1
+                    if i<N and pos_list[i] in rotate_pos_cls[1]:
+                        ent.append(pos_list[i])
+                        i += 1
+                    break
+                i += 1
+            ents.append(ent)
+        else:
+            i += 1
+    return ents
+
+def get_targ_ents_2(pos_list, rotate_pos_cls, ent_end_pos=None):
+    '''得到序列中的实体'''
+    i, N = 0, len(pos_list)
+
+    ents = []
+    while i<N:
+        # 碰到实体开始符
+        if pos_list[i] in rotate_pos_cls[0]:
+            ent = [pos_list[i]]
+            i += 1
+            while i<N:
+                ent.append(pos_list[i])
+                # 碰到实体结束符
+                if pos_list[i] in rotate_pos_cls[1]:
+                    i += 1
+                    break
+                i += 1
+            ents.append(ent)
+        else:
+            i += 1
+    return ents
+
 
 def flat_sequence(
     batch_pred, 

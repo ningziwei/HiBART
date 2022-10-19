@@ -1,6 +1,8 @@
+from unicodedata import bidirectional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from data_pipe import flat_sequence
 
 class HiDecoder(nn.Module):
@@ -12,17 +14,12 @@ class HiDecoder(nn.Module):
         causal_mask = causal_mask.triu(diagonal=1)
         self.register_buffer('causal_mask', causal_mask.float())
         self.dropout_layer = nn.Dropout(0.3)
-        hidden_size = decoder.embed_tokens.weight.size(1)
-        self.encoder_mlp = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size),
-            nn.Dropout(0.3), nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size)
-        )
+        self.lstm = nn.LSTM(768, 384, 1, bidirectional=True)
     
     def forward(
         self, enc_output, src_embed,
         enc_src_len, enc_mask, 
-        dec_src_ids, dec_mask):
+        dec_src_ids, dec_mask, dec_src_len=None):
         '''
         预测一次输出，得到token是每个候选token的概率
         enc_output: bsz*max_len*emb_dim
@@ -39,37 +36,44 @@ class HiDecoder(nn.Module):
             decoder_causal_mask=causal_mask,
             return_dict=True
         )
-        hidden_state = dec_state_dic.last_hidden_state
-        hidden_state = self.dropout_layer(hidden_state)
+        dec_output = dec_state_dic.last_hidden_state
+        dec_output = self.dropout_layer(dec_output)
+        # 用双向lstm处理decoder的输出向量
+        if self.args['use_lstm']:
+            hidd_state = pack_padded_sequence(
+                dec_output, dec_src_len, batch_first=True, enforce_sorted=False)
+            lstm_out, (_, _) = self.lstm(hidd_state)
+            dec_output, _ = pad_packed_sequence(lstm_out,batch_first=True)
+            
         # 初始化预测结果，bsz*dec_out_max_len*enc_out_max_len
-        logits = hidden_state.new_full(
-            list(hidden_state.size()[:2])+[enc_output.size(1)],
+        logits = dec_output.new_full(
+            list(dec_output.size()[:2])+[enc_output.size(1)],
             fill_value=-1e32)
         
-        if self.args['static_eos']:
-            # 静态结束符，用词表中的结束符嵌入向量作为目标
-            eos_id = self.args['eos_id']
-            eos_emb = self.decoder.embed_tokens.weight[eos_id:eos_id+1]
-            eos_scores = F.linear(hidden_state, self.dropout_layer(eos_emb))
-        else:
-            # 动态结束符，用结束符的编码向量作为目标
-            eos_emb = enc_output[range(len(enc_output)), enc_src_len-1, :]
-            eos_emb = eos_emb.unsqueeze(1)
-            # print('57', hidden_state.shape, eos_emb.shape)
-            eos_scores = torch.bmm(hidden_state, eos_emb.permute(0,2,1))
+        # if self.args['static_eos']:
+        #     # 静态结束符，用词表中的结束符嵌入向量作为目标
+        #     eos_id = self.args['eos_id']
+        #     eos_emb = self.decoder.embed_tokens.weight[eos_id:eos_id+1]
+        #     eos_scores = F.linear(hidden_state, self.dropout_layer(eos_emb))
+        # else:
+        #     # 动态结束符，用结束符的编码向量作为目标
+        #     eos_emb = enc_output[range(len(enc_output)), enc_src_len-1, :]
+        #     eos_emb = eos_emb.unsqueeze(1)
+        #     # print('57', hidden_state.shape, eos_emb.shape)
+        #     eos_scores = torch.bmm(hidden_state, eos_emb.permute(0,2,1))
         
         # enc_src_embed = self.decoder.embed_tokens(enc_src_ids)
         # enc_src_embed = self.dropout_layer(enc_src_embed)
         # enc_output = self.encoder_mlp(enc_output)
         # enc_output = self.dropout_layer(enc_output)
         # src_embed = (enc_src_embed + enc_output)/2
-        word_scores = torch.einsum('blh,bnh->bln', hidden_state, src_embed)
+        word_scores = torch.einsum('blh,bnh->bln', dec_output, src_embed)
         
         if self.args['static_eos']:
             # 静态结束符，用词表中的结束符嵌入向量作为目标
             eos_id = self.args['eos_id']
             eos_emb = self.decoder.embed_tokens.weight[eos_id:eos_id+1]
-            eos_scores = F.linear(hidden_state, self.dropout_layer(eos_emb))
+            eos_scores = F.linear(dec_output, self.dropout_layer(eos_emb))
         else:
             # 动态结束符，用结束符的编码向量作为目标
             # eos_emb = enc_output[range(len(enc_output)), enc_src_len-1, :]
@@ -106,12 +110,13 @@ class HiBart(nn.Module):
         self.loss_fn = loss_fn
         self.args = args
 
-        self.dropout_layer = nn.Dropout(0.3)
+        self.dropout_layer = nn.Dropout(0.5)
         hidden_size = self.encoder.embed_tokens.weight.size(1)
         self.encoder_mlp = nn.Sequential(
             nn.Linear(hidden_size, hidden_size),
             nn.Dropout(0.3), nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size)
+            nn.Linear(hidden_size, hidden_size),
+            nn.Dropout(0.3)
         )
         self.hi_decoder = HiDecoder(bart.decoder, args)
         
@@ -140,14 +145,15 @@ class HiBart(nn.Module):
         enc_src_embed = self.encoder.embed_tokens(enc_src_ids)
         enc_src_embed = self.dropout_layer(enc_src_embed)
         enc_output_mlp = self.encoder_mlp(enc_output)
-        enc_output_mlp = self.dropout_layer(enc_output_mlp)
         src_embed = (enc_src_embed + enc_output_mlp)/2
+        # src_embed = enc_src_embed
         '''
         训练过程是batch_size*3*dec_max_len，三条都有用
         预测过程是batch_size*1*dec_max_len，只有第一条有用
         '''
         dec_src_ids_bund = dec_src_ids_bund.permute(1,0,2)
         dec_mask_bund = dec_mask_bund.permute(1,0,2)
+        dec_src_len_bund = dec_src_len_bund.permute(1,0)
 
         if dec_targ_pos_bund is not None:
             '''训练过程，三段训练依次进行，各loss求和后一起更新'''
@@ -156,11 +162,12 @@ class HiBart(nn.Module):
             for i in train_range:
                 dec_src_ids = dec_src_ids_bund[i]
                 dec_mask = dec_mask_bund[i]
+                dec_src_len = dec_src_len_bund[i]
                 dec_targ_pos = dec_targ_pos_bund[i]
                 logits = self.hi_decoder(
                     enc_output, src_embed,
                     enc_src_len, enc_mask,
-                    dec_src_ids, dec_mask)
+                    dec_src_ids, dec_mask, dec_src_len)
                 batch_loss += self.loss_fn(
                     logits, dec_targ_pos, dec_mask)
             batch_pred = torch.argmax(logits, dim=-1)
@@ -171,14 +178,16 @@ class HiBart(nn.Module):
             dec_src_ids = dec_src_ids_bund[0]
             dec_src_pos = dec_src_pos_bund[0]
             dec_mask = dec_mask_bund[0]
+            dec_src_len = dec_src_len_bund[0]
             dic_hir_pos_cls=self.args['dic_hir_pos_cls']
             # print('174', dec_src_ids[0])
             # print('175', dec_src_pos[0])
-            for i in range(3):
+            eval_range = range(len(dec_src_ids_bund))
+            for i in eval_range:
                 logits = self.hi_decoder(
                     enc_output, src_embed,
                     enc_src_len, enc_mask,
-                    dec_src_ids, dec_mask)
+                    dec_src_ids, dec_mask, dec_src_len)
                 batch_pred = torch.argmax(logits, dim=-1)
                 dec_src_ids = dec_src_ids.masked_fill(dec_mask.eq(0), -1)
                 # print('183', batch_pred[0])
@@ -195,6 +204,7 @@ class HiBart(nn.Module):
                     pad_value=self.args['pad_value'],
                     device=self.args['device']
                 )
+                dec_src_len = dec_mask.sum(dim=-1)
                 # print('194', batch_pred[0])
                 # print('195', dec_src_ids[0])
                 # print('196', dec_src_pos[0])
