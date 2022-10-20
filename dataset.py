@@ -1,6 +1,7 @@
 import torch
 import bisect
 import numpy as np
+from collections import defaultdict
 from torch.utils.data import Dataset
 from torch.utils.data.sampler import Sampler, SubsetRandomSampler, BatchSampler
 from data_pipe import padding
@@ -60,24 +61,25 @@ class GroupBatchRandomSampler(Sampler):
         return len(self.batch_indices)
 
 def collate_fn(batch_data, pad_value=0, device=torch.device("cpu")):
-    padded_batch = dict()
+    padded_batch = defaultdict(list)
     enc_src_ids, mask = padding(
         [d["enc_src_ids"] for d in batch_data], pad_value)
     padded_batch["enc_src_ids"] = torch.tensor(enc_src_ids, dtype=torch.long, device=device)
     padded_batch["enc_src_len"] = torch.tensor([d["enc_src_len"] for d in batch_data], device=device)
     padded_batch["enc_mask"] = torch.tensor(mask, dtype=torch.bool, device=device)
     
-    dec_src_ids, mask = padding(
-        [d["dec_src_ids"] for d in batch_data], pad_value, dim=3)
-    dec_src_pos, mask = padding(
-        [d["dec_src_pos"] for d in batch_data], pad_value, dim=3)
-    padded_batch["dec_src_ids_bund"] = torch.tensor(dec_src_ids, dtype=torch.long, device=device)
-    padded_batch["dec_src_pos_bund"] = torch.tensor(dec_src_pos, dtype=torch.long, device=device)
-    padded_batch["dec_mask_bund"] = torch.tensor(mask, dtype=torch.bool, device=device)
-    
-    dec_targ_pos, mask = padding(
-        [d["dec_targ_pos"] for d in batch_data], pad_value, dim=3)
-    padded_batch["dec_targ_pos_bund"] = torch.tensor(dec_targ_pos, dtype=torch.long, device=device)
+    for i in range(len(batch_data[0]['dex_src_ids'])):
+        dec_src_ids, mask = padding(
+            [d["dec_src_ids"][i] for d in batch_data], pad_value)
+        dec_src_pos, mask = padding(
+            [d["dec_src_pos"][i] for d in batch_data], pad_value)
+        padded_batch["dec_src_ids_bund"].append(torch.tensor(dec_src_ids, dtype=torch.long, device=device))
+        padded_batch["dec_src_pos_bund"].append(torch.tensor(dec_src_pos, dtype=torch.long, device=device))
+        padded_batch["dec_mask_bund"].append(torch.tensor(mask, dtype=torch.bool, device=device))
+        
+        dec_targ_pos, mask = padding(
+            [d["dec_targ_pos"][i] for d in batch_data], pad_value)
+        padded_batch["dec_targ_pos_bund"].append(torch.tensor(dec_targ_pos, dtype=torch.long, device=device))
 
     targ_ents = [d["targ_ents"] for d in batch_data]
     padded_batch["targ_ents"] = targ_ents

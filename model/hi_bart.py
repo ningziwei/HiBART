@@ -153,15 +153,9 @@ class HiBart(nn.Module):
         训练过程是batch_size*3*dec_max_len，三条都有用
         预测过程是batch_size*1*dec_max_len，只有第一条有用
         '''
-        dec_src_ids_bund = dec_src_ids_bund.permute(1,0,2)
-        print('157', dec_mask_bund[:,:,-5:])
-        dec_src_len_bund = dec_mask_bund.sum(dim=-1)
-        dec_mask_bund = dec_mask_bund.permute(1,0,2)
-        dec_src_len_bund = dec_src_len_bund.permute(1,0)
 
         if dec_targ_pos_bund is not None:
             '''训练过程，三段训练依次进行，各loss求和后一起更新'''
-            dec_targ_pos_bund = dec_targ_pos_bund.permute(1,0,2)
             batch_loss = 0
             for i in train_range:
                 dec_src_ids = dec_src_ids_bund[i]
@@ -178,7 +172,6 @@ class HiBart(nn.Module):
             return batch_loss, batch_pred
         else:
             '''预测过程，执行后解码，解码结果再给到decoder'''
-            dec_src_pos_bund = dec_src_pos_bund.permute(1,0,2)
             dec_src_ids = dec_src_ids_bund[0]
             dec_src_pos = dec_src_pos_bund[0]
             dec_mask = dec_mask_bund[0]
