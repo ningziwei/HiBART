@@ -38,13 +38,15 @@ class HiDecoder(nn.Module):
         )
         dec_output = dec_state_dic.last_hidden_state
         dec_output = self.dropout_layer(dec_output)
+        print('hi_bart 41', dec_output.shape)
         # 用双向lstm处理decoder的输出向量
         if self.args['use_lstm']:
             hidd_state = pack_padded_sequence(
-                dec_output, dec_src_len, batch_first=True, enforce_sorted=False)
+                dec_output, dec_src_len.cpu(), batch_first=True, enforce_sorted=False)
             lstm_out, (_, _) = self.lstm(hidd_state)
             dec_output, _ = pad_packed_sequence(lstm_out,batch_first=True)
-            
+        print('dec_src_len', dec_src_len)
+        print('hi_bart 48', dec_output.shape)
         # 初始化预测结果，bsz*dec_out_max_len*enc_out_max_len
         logits = dec_output.new_full(
             list(dec_output.size()[:2])+[enc_output.size(1)],
@@ -152,6 +154,8 @@ class HiBart(nn.Module):
         预测过程是batch_size*1*dec_max_len，只有第一条有用
         '''
         dec_src_ids_bund = dec_src_ids_bund.permute(1,0,2)
+        print('157', dec_mask_bund[:,:,-5:])
+        dec_src_len_bund = dec_mask_bund.sum(dim=-1)
         dec_mask_bund = dec_mask_bund.permute(1,0,2)
         dec_src_len_bund = dec_src_len_bund.permute(1,0)
 
@@ -162,7 +166,7 @@ class HiBart(nn.Module):
             for i in train_range:
                 dec_src_ids = dec_src_ids_bund[i]
                 dec_mask = dec_mask_bund[i]
-                dec_src_len = dec_src_len_bund[i]
+                dec_src_len = dec_mask.sum(dim=-1)
                 dec_targ_pos = dec_targ_pos_bund[i]
                 logits = self.hi_decoder(
                     enc_output, src_embed,
@@ -178,12 +182,12 @@ class HiBart(nn.Module):
             dec_src_ids = dec_src_ids_bund[0]
             dec_src_pos = dec_src_pos_bund[0]
             dec_mask = dec_mask_bund[0]
-            dec_src_len = dec_src_len_bund[0]
             dic_hir_pos_cls=self.args['dic_hir_pos_cls']
             # print('174', dec_src_ids[0])
             # print('175', dec_src_pos[0])
             eval_range = range(len(dec_src_ids_bund))
             for i in eval_range:
+                dec_src_len = dec_mask.sum(dim=-1)
                 logits = self.hi_decoder(
                     enc_output, src_embed,
                     enc_src_len, enc_mask,

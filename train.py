@@ -118,32 +118,6 @@ def get_model_optim_sched(config, dic_cls_id):
         optimizer, config["scheduler_step"], gamma=0.1)
     return model, optimizer, batch_sched, epoch_sched
 
-def test_nan(model):
-    max_params = 0
-    max_grad = 0
-    for name, parms in model.named_parameters():	
-        # continue
-        # print('-----------------------------------')
-        # print('-->name:', name)
-        # print('-->grad_requirs:', parms.requires_grad)
-        
-        if parms.requires_grad:
-            if parms.grad==None:
-                print('居然是None')
-            if parms.grad is not None and torch.any(torch.isnan(parms.grad)):
-                print('有nan')
-                break
-            #     print('-->para:', parms.shape)
-            #     print('-->grad_value:',torch.max(parms.grad).abs())
-        max_params = max(max_params, torch.max(parms).abs())
-        if parms.grad is not None:
-            max_grad = max(max_grad, torch.max(parms.grad).abs())    
-    print('max_params', max_params)
-    print('max_grad', max_grad)
-    # print('train 147', model.encoder.embed_tokens.weight.data[21144][:10])
-    print("=================================")
-    time.sleep(1)
-
 def calib_pred(preds, end_pos, fold):
     '''矫正解码的错误'''
     new_preds = []
