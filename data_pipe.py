@@ -193,7 +193,7 @@ class DataDealer:
         '''
         bundles = self.get_hier_sent(sent)
         sent_bund, targ_bund, sent_pos_bund, targ_pos_bund = bundles
-        if self.config['end_self_sup']:
+        if self.config['targ_self_sup']:
             '''对完整的目标序列执行一次自编码'''
             targ_bund.append(sent_bund[-1])
             targ_pos_bund.append(sent_pos_bund[-1])
