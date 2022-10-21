@@ -1,4 +1,3 @@
-from unicodedata import bidirectional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -32,21 +31,26 @@ class HiDecoder(nn.Module):
             input_ids=dec_src_ids,
             encoder_hidden_states=enc_output,
             encoder_padding_mask=enc_mask,
-            decoder_padding_mask=dec_mask.eq(0),
+            decoder_padding_mask=dec_mask,
             decoder_causal_mask=causal_mask,
             return_dict=True
         )
         dec_output = dec_state_dic.last_hidden_state
         dec_output = self.dropout_layer(dec_output)
-        print('hi_bart 41', dec_output.shape)
+        
         # 用双向lstm处理decoder的输出向量
         if self.args['use_lstm']:
-            hidd_state = pack_padded_sequence(
+            # s1 = dec_output.shape
+            packed_embs = pack_padded_sequence(
                 dec_output, dec_src_len.cpu(), batch_first=True, enforce_sorted=False)
-            lstm_out, (_, _) = self.lstm(hidd_state)
-            dec_output, _ = pad_packed_sequence(lstm_out,batch_first=True)
-        print('dec_src_len', dec_src_len)
-        print('hi_bart 48', dec_output.shape)
+            lstm_out, (_, _) = self.lstm(packed_embs)
+            lstm_out, _ = pad_packed_sequence(lstm_out, batch_first=True)
+            dec_output = self.dropout_layer(lstm_out)
+
+            # if s1!=dec_output.shape:
+            #     print('dec_src_len', dec_src_len)
+            #     print('hi_bart 50', s1)
+            #     print('hi_bart 51', dec_output.shape)
         # 初始化预测结果，bsz*dec_out_max_len*enc_out_max_len
         logits = dec_output.new_full(
             list(dec_output.size()[:2])+[enc_output.size(1)],
@@ -133,9 +137,9 @@ class HiBart(nn.Module):
         enc_src_ids: batch_size*enc_max_len
         enc_src_len: batch_size*1
         enc_mask: batch_size*enc_max_len
-        dec_src_ids_bund: batch_size*3*dec_max_len
-        dec_mask_bund: batch_size*3*dec_max_len
-        dec_targ_pos_bund: batch_size*3*dec_max_len
+        dec_src_ids_bund: 3*batch_size*dec_max_len
+        dec_mask_bund: 3*batch_size*dec_max_len
+        dec_targ_pos_bund: 3*batch_size*dec_max_len
         分阶段解码经过三次解码器，最后的loss是三次loss的和
         '''
         enc_state_dic = self.encoder(
@@ -160,7 +164,10 @@ class HiBart(nn.Module):
             for i in train_range:
                 dec_src_ids = dec_src_ids_bund[i]
                 dec_mask = dec_mask_bund[i]
+                # print('163', dec_mask.shape)
+                # print(dec_mask[:,-5:])
                 dec_src_len = dec_mask.sum(dim=-1)
+                # print(dec_src_len)
                 dec_targ_pos = dec_targ_pos_bund[i]
                 logits = self.hi_decoder(
                     enc_output, src_embed,
@@ -175,7 +182,7 @@ class HiBart(nn.Module):
             dec_src_ids = dec_src_ids_bund[0]
             dec_src_pos = dec_src_pos_bund[0]
             dec_mask = dec_mask_bund[0]
-            dic_hir_pos_cls=self.args['dic_hir_pos_cls']
+            dic_hir_pos_cls = self.args['dic_hir_pos_cls']
             # print('174', dec_src_ids[0])
             # print('175', dec_src_pos[0])
             eval_range = range(len(dec_src_ids_bund))

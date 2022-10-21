@@ -371,7 +371,9 @@ class BartEncoder(nn.Module):
             if self.training and (dropout_probability < self.layerdrop):  # skip the layer
                 attn = None
             else:
-                x, attn = encoder_layer(x, attention_mask, output_attentions=output_attentions, 
+                x, attn = encoder_layer(
+                    x, attention_mask, 
+                    output_attentions=output_attentions, 
                     enc_attn=enc_attn)
 
             if output_attentions:
@@ -437,12 +439,6 @@ class DecoderLayer(nn.Module):
         if self.normalize_before:
             x = self.self_attn_layer_norm(x)
         # Self Attention
-        # if decoder_padding_mask is not None:
-        #     print('Self Attention')
-        #     print('key x', x.shape)
-        #     print('mode bart 421 dec', decoder_padding_mask.shape)
-        # else:
-        #     print(decoder_padding_mask)
         x, self_attn_weights = self.self_attn(
             query=x, key=x,
             layer_state=layer_state,  # adds keys to layer state
@@ -582,6 +578,8 @@ class BartDecoder(nn.Module):
         # check attention mask and invert
         if encoder_padding_mask is not None:
             encoder_padding_mask = invert_mask(encoder_padding_mask)
+        if decoder_padding_mask is not None:
+            decoder_padding_mask = invert_mask(decoder_padding_mask)
 
         # embed positions
         positions = self.embed_positions(input_ids, use_cache=use_cache)
@@ -591,11 +589,6 @@ class BartDecoder(nn.Module):
             positions = positions[:, -1:]
 
         x = self.embed_tokens(input_ids) * self.embed_scale
-        # print('mod bart 576', x.shape, x)
-        # print('mod bart 577', decoder_padding_mask)
-        # if decoder_padding_mask is not None:
-        #     print('mod bart 578', decoder_causal_mask.shape)
-        #     print(x.shape)
         if self.do_blenderbot_90_layernorm:
             x = self.layernorm_embedding(x)
             x += positions
@@ -709,7 +702,12 @@ class Attention(nn.Module):
             output_attentions=False,
             enc_attn=None
     ):
-        """Input shape: Time(SeqLen) x Batch x Channel"""
+        """
+        Input shape: Time(SeqLen) x Batch x Channel
+        key_padding_mask: 二维是对key做padding，三维可以定义更精细的注意力方式
+        attn_mask: 用于decoder中的causal mask
+        enc_attn: 没什么用，一般置为None
+        """
         # print('mod bart 721', query.size(), key.size())
         static_kv: bool = self.encoder_decoder_attention
         tgt_len, bsz, embed_dim = query.size()
@@ -759,10 +757,8 @@ class Attention(nn.Module):
         attn_weights = torch.bmm(q, k.transpose(1, 2))
         assert attn_weights.size() == (bsz * self.num_heads, tgt_len, src_len)
 
-        # print('mod bart 774', attn_weights.shape)
+        # 用于decoder中的causal mask
         if attn_mask is not None:
-            # print('mod bart 737', bsz, self.num_heads, tgt_len, src_len)
-            # print('mod bart 777', attn_weights.shape, attn_mask.shape)
             if attn_mask.size() == (bsz, src_len):
                 attn_mask = attn_mask.unsqueeze(1).unsqueeze(2)
             attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len) + attn_mask
@@ -778,6 +774,7 @@ class Attention(nn.Module):
             bsz, src_len
         )
 
+        # 根据 encoder mask 将 query 对 pad 所在位置的权重置为 -inf
         if key_padding_mask is not None:  # don't attend to padding symbols
             attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
             if enc_attn is not None:
@@ -790,7 +787,7 @@ class Attention(nn.Module):
             attn_weights = attn_weights.masked_fill(reshaped, float("-inf"))
             attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
         if torch.any(torch.isnan(attn_weights)):
-            print('attn_weights', attn_weights)
+            print('modeling_bart 793', attn_weights)
         attn_weights = F.softmax(attn_weights, dim=-1)
         attn_weights = torch.where(
             torch.isnan(attn_weights), torch.full_like(attn_weights, 0), attn_weights)
