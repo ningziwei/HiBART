@@ -350,6 +350,8 @@ class BartEncoder(nn.Module):
         # check attention mask and invert
         if attention_mask is not None:
             attention_mask = invert_mask(attention_mask)
+        if enc_attn is not None:
+            enc_attn = invert_mask(enc_attn)
 
         inputs_embeds = self.embed_tokens(input_ids) * self.embed_scale
         '''@@@在pipe中直接生成输入序列的pos id，在embed_positions内部直接返回嵌入结果'''
@@ -372,7 +374,7 @@ class BartEncoder(nn.Module):
                 attn = None
             else:
                 x, attn = encoder_layer(
-                    x, attention_mask, 
+                    x, encoder_padding_mask=attention_mask, 
                     output_attentions=output_attentions, 
                     enc_attn=enc_attn)
 
@@ -706,7 +708,9 @@ class Attention(nn.Module):
         Input shape: Time(SeqLen) x Batch x Channel
         key_padding_mask: 二维是对key做padding，三维可以定义更精细的注意力方式
         attn_mask: 用于decoder中的causal mask
-        enc_attn: 没什么用，一般置为None
+        enc_attn: 由于encoder和decoder中都要用到encoder_padding_mask，当需要
+          对encoder中的注意力过程执行更精细化的限制时，可通过此参数传递三维的限
+          制矩阵，key_padding_mask的输入保持不变
         """
         # print('mod bart 721', query.size(), key.size())
         static_kv: bool = self.encoder_decoder_attention
@@ -775,6 +779,7 @@ class Attention(nn.Module):
         )
 
         # 根据 encoder mask 将 query 对 pad 所在位置的权重置为 -inf
+        # tgt_len 是 query 的长度
         if key_padding_mask is not None:  # don't attend to padding symbols
             attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
             if enc_attn is not None:
@@ -786,8 +791,12 @@ class Attention(nn.Module):
                     reshaped = key_padding_mask.unsqueeze(1).unsqueeze(2)
             attn_weights = attn_weights.masked_fill(reshaped, float("-inf"))
             attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
+            if enc_attn is not None:
+                print('793', attn_weights[0])
+                print('794', enc_attn[0])
         if torch.any(torch.isnan(attn_weights)):
             print('modeling_bart 793', attn_weights)
+        # print('modeling_bart 794', attn_weights)
         attn_weights = F.softmax(attn_weights, dim=-1)
         attn_weights = torch.where(
             torch.isnan(attn_weights), torch.full_like(attn_weights, 0), attn_weights)

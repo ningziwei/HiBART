@@ -469,38 +469,6 @@ class DataDealer:
             
         return dec_src_ids, dec_src_pos, dec_targ_pos
 
-    
-def padding(data, pad_value=0, dim=2):
-    '''
-    pad data to maximum length
-    data: list(list), unpadded data
-    pad_value: int, filled value
-    dim: int, dimension of padded data
-        dim=2, result=(batch_size, sen_len)
-        dim=3, result=(batch_size, sen_len, word_len)
-    '''
-    sen_len = max([len(d) for d in data])
-    if dim == 2:
-        padded_data = [d + [pad_value] * (sen_len-len(d)) for d in data]
-        padded_mask = [[1] * len(d) + [0] * (sen_len-len(d)) for d in data]
-        return padded_data, padded_mask
-    elif dim == 3:
-        word_len = max([max([len(dd) for dd in d]) for d in data])
-        padded_data = []
-        padded_mask = []
-        for d in data:
-            padded_data.append([])
-            padded_mask.append([])
-            for dd in d:
-                padded_data[-1].append(dd + [pad_value] * (word_len-len(dd)))
-                padded_mask[-1].append([1] * len(dd) + [0] * (word_len-len(dd)))
-            for _ in range(sen_len - len(d)):
-                padded_data[-1].append([pad_value] * word_len)
-                padded_mask[-1].append([0] * word_len)
-        return padded_data, padded_mask
-    else:
-        raise NotImplementedError("Dimension %d not supported! Legal option: 2 or 3." % dim)
-
 def get_targ_ents(pos_list, rotate_pos_cls):
     '''得到序列中的实体'''
     i, N = 0, len(pos_list)
@@ -578,43 +546,6 @@ def get_targ_ents_2(pos_list, rotate_pos_cls, ent_end_pos=None):
     return ents
 
 
-def flat_sequence(
-    batch_pred, 
-    batch_enc_src_ids, 
-    batch_dec_src_ids,
-    batch_dec_src_pos,
-    dic_pos_cls,
-    pad_value=0,
-    device=torch.device("cpu")
-):
-    '''
-    根据解码结果，将序列拉平
-    '''
-    next_ids = []
-    next_pos = []
-    for i in range(len(batch_pred)):
-        pred = batch_pred[i]
-        enc_src_ids = batch_enc_src_ids[i]
-        dec_src_ids = batch_dec_src_ids[i]
-        dec_src_pos = batch_dec_src_pos[i]
-        next_dec_src_ids = []
-        next_dec_src_pos = []
-        for j in range(len(dec_src_ids)):
-            if dec_src_ids[j]==-1: continue
-            # print(pred[j], enc_src_ids[pred[j]-1])
-            next_dec_src_ids.append(dec_src_ids[j].item())
-            next_dec_src_pos.append(dec_src_pos[j].item())
-            if pred[j] in dic_pos_cls:
-                next_dec_src_ids.append(enc_src_ids[pred[j]-1].item())
-                next_dec_src_pos.append(pred[j].item())
-        next_ids.append(next_dec_src_ids)
-        next_pos.append(next_dec_src_pos)
-    next_ids_padded, mask = padding(next_ids, pad_value)
-    next_ids_padded = torch.tensor(next_ids_padded, dtype=torch.long, device=device)
-    next_dec_mask = torch.tensor(mask, dtype=torch.bool, device=device)
-    next_pos_padded, _ = padding(next_pos, pad_value)
-    next_pos_padded = torch.tensor(next_pos_padded, dtype=torch.long, device=device)
-    return next_ids_padded, next_pos_padded, next_dec_mask, next_pos
 
 
     

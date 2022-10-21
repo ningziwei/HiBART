@@ -134,10 +134,11 @@ def init_cls_token_statistic(bart, dic_cls_id, triv_tokenizer, sentences):
         #     embed += bart.encoder.embed_tokens.weight.data[c_i]
         embed = embed/len(char_idx)
         embed = embed*torch.sqrt(2/torch.mul(embed,embed).sum())        
-        tmp = bart.encoder.embed_tokens.weight.data[char_idx[0]]
+        # tmp = bart.encoder.embed_tokens.weight.data[char_idx[0]]
         # print('138', torch.mul(embed,embed).sum())
         # print(torch.mul(tmp,tmp).sum())
-        embed = embed.new_tensor(embed, requires_grad=True)
+        # embed = embed.new_tensor(embed, requires_grad=True)
+        embed = embed.clone().detach().requires_grad_(True)
         bart.encoder.embed_tokens.weight.data[val] = embed
 
 def get_model_optim_sched(config, dic_cls_id):
@@ -292,6 +293,7 @@ def train(config):
                     batch['enc_src_ids'],
                     batch['enc_src_len'],
                     batch['enc_mask'],
+                    enc_attn_mask=batch['enc_attn_mask'],
                     dec_src_ids_bund=batch['dec_src_ids_bund'],
                     dec_mask_bund=batch['dec_mask_bund'],
                     dec_targ_pos_bund=batch['dec_targ_pos_bund'],
