@@ -1,6 +1,7 @@
 
 import json
 import torch
+# from transformers import BartTokenizer
 from model.tokenizer_full import BertTokenizer
 
 def parse_CoNLL_file(filename):
@@ -47,9 +48,9 @@ def parse_label(sentences, cls_token_path=None, ent_end_tok='<<ent_end>>'):
     '''
     得到实体抽取数据集的所有标签和实体类别
     new_tokens_bundle: [
-        ['<<b-loc.nam-s>>', '<<b-loc.nam-e>>', '<<ent_end>>'],
-        ['<<b-loc.nam-s>>'],
-        ['<<b-loc.nam-e>>', '<<ent_end>>']
+        ['<<loc.nam-s>>', '<<loc.nam-e>>', '<<ent_end>>'],
+        ['<<loc.nam-s>>'],
+        ['<<loc.nam-e>>', '<<ent_end>>']
     ]
     '''
     label_dic = {}
@@ -118,21 +119,18 @@ class MyTokenizer(BertTokenizer):
         self.dic_all_end_pos_cls = dic_all_end_pos_cls
         
 class DataDealer:
-    def __init__(
-        self, tokenizer, ent_end_tok='<<ent_end>>', fold=3
-    ):
+    def __init__(self, tokenizer, fold=3):
         self.tokenizer = tokenizer
-        self.ent_end_tok = ent_end_tok
+        if fold==3:
+            self.get_hier_sent = self.get_three_sent
+        else:
+            self.get_hier_sent = self.get_two_sent
+        self.ent_end_tok='<<ent_end>>'
         self.tokens_to_ids = self.tokenizer.convert_tokens_to_ids
         rotate_pos_cls = []
         rotate_pos_cls.append(tokenizer.dic_start_pos_cls)
         rotate_pos_cls.append(tokenizer.dic_all_end_pos_cls)
         self.rotate_pos_cls = rotate_pos_cls
-        if fold==3:
-            self.get_hier_sent = self.get_three_sent
-        else:
-            self.get_hier_sent = self.get_two_sent
-
 
     def get_one_sample(self, sent):
         '''
@@ -217,6 +215,7 @@ class DataDealer:
         enc_src_ids = [self.tokens_to_ids(tk) for tk in src_toks]
         # print('147', src_toks, enc_src_ids)
         return {
+            'cls_toks_num': len(cls_toks),
             'raw_chars': sent_bund[0],
             'src_toks': src_toks,
             'targ_toks': sent_bund[-1],

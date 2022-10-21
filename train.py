@@ -3,6 +3,7 @@ import json
 import time
 import torch
 import torch.optim as optim
+from collections import defaultdict
 from torch.utils.data import DataLoader
 from transformers import PretrainedConfig
 from transformers import get_linear_schedule_with_warmup
@@ -11,6 +12,7 @@ import utils
 from data_pipe import *
 from dataset import *
 from model.modeling_bart import BartModel
+# from transformers import BartModel
 from model.hi_bart import HiBart
 from model.losses import CrossEntropyLossWithMask
 
@@ -43,7 +45,7 @@ def get_tokenizer(config):
     '''
     解析训练集标签，得到模型添加特殊标记的tokenizer
     '''
-    dataset_dir = os.path.join(config['data_dir'], config['dataset'])
+    dataset_dir = config['dataset_dir']
     cls_token_path = os.path.join(dataset_dir, 'cls_token.json')
     if not os.path.exists(cls_token_path):
         file_path = os.path.join(dataset_dir, 'train.train')
@@ -64,10 +66,9 @@ def get_data_loader(config, data_dealer):
     '''得到三个数据集的dataloader'''
     device = config['device']
     pad_value = config['pad_value']
-    dataset_dir = os.path.join(config['data_dir'], config['dataset'])
 
     def get_loader(subset):
-        file_path = os.path.join(dataset_dir, f'{subset}.{subset}')
+        file_path = os.path.join(config['dataset_dir'], f'{subset}.{subset}')
         sentences = parse_CoNLL_file(file_path)
         __dataset = CoNLLDataset(sentences, data_dealer)
         __sampler = GroupBatchRandomSampler(
@@ -83,7 +84,7 @@ def get_data_loader(config, data_dealer):
     valid_loader = get_loader("dev")
     return train_loader, test_loader, valid_loader
 
-def init_cls_token(bart, dic_cls_id, triv_tokenizer):
+def init_cls_token_triv(bart, dic_cls_id, triv_tokenizer):
     '''在bart模型中初始化特殊标记的嵌入向量'''
     num_tokens, _ = bart.encoder.embed_tokens.weight.shape
     bart.resize_token_embeddings(len(dic_cls_id)+num_tokens)
@@ -98,13 +99,59 @@ def init_cls_token(bart, dic_cls_id, triv_tokenizer):
         embed = embed.new_tensor(embed, requires_grad=True)
         bart.encoder.embed_tokens.weight.data[val] = embed
 
+def init_cls_token_statistic(bart, dic_cls_id, triv_tokenizer, sentences):
+    '''在bart模型中初始化特殊标记的嵌入向量'''
+    num_tokens, _ = bart.encoder.embed_tokens.weight.shape
+    bart.resize_token_embeddings(len(dic_cls_id)+num_tokens)
+    last_w = {'word':'', 'tag':'o'}
+    cls_margin_word = defaultdict(list)
+    for sent in sentences:
+        sent = sent + [last_w]
+        w_ = {'word':'', 'tag':''}
+        for w in sent:
+            if w['tag'].startswith('b-'):
+                '''实体开始的位置'''
+                tag = "<<{}-s>>".format(w['tag'][2:])
+                cls_margin_word[tag].append(w['word'])
+                if w_['word']: cls_margin_word[tag].append(w_['word'])
+            if w['tag']=='o' and w_['tag'][:2] in ['i-','b-']: 
+                '''实体结束的位置'''
+                tag = "<<{}-e>>".format(w_['tag'][2:])
+                cls_margin_word[tag].append(w_['word'])
+                if w['word']: cls_margin_word[tag].append(w['word'])
+                tag = '<<ent_end>>'
+                cls_margin_word[tag].append(w_['word'])
+                if w['word']: cls_margin_word[tag].append(w['word'])
+            w_ = w
+    for tok, val in dic_cls_id.items():
+        char_idx = triv_tokenizer.convert_tokens_to_ids(
+            triv_tokenizer.tokenize(''.join(cls_margin_word[tok]))
+        )
+        # print('train 131', tok, len(char_idx))
+        embed = bart.encoder.embed_tokens.weight.data[char_idx].sum(dim=-2)
+        # print(embed)
+        # for c_i in char_idx[1:]:
+        #     embed += bart.encoder.embed_tokens.weight.data[c_i]
+        embed = embed/len(char_idx)
+        embed = embed*torch.sqrt(2/torch.mul(embed,embed).sum())        
+        tmp = bart.encoder.embed_tokens.weight.data[char_idx[0]]
+        # print('138', torch.mul(embed,embed).sum())
+        # print(torch.mul(tmp,tmp).sum())
+        embed = embed.new_tensor(embed, requires_grad=True)
+        bart.encoder.embed_tokens.weight.data[val] = embed
+
 def get_model_optim_sched(config, dic_cls_id):
     '''初始化模型、优化器、学习率函数'''
     device = config['device']
     model_path = config['model_path']
     bart = BartModel.from_pretrained(model_path).to(device)
     triv_tokenizer = MyTokenizer.from_pretrained(model_path)
-    init_cls_token(bart, dic_cls_id, triv_tokenizer)
+    if not config['statis_init']:
+        init_cls_token_triv(bart, dic_cls_id, triv_tokenizer)
+    else:
+        file_path = os.path.join(config['dataset_dir'], 'train.train')
+        sentences = parse_CoNLL_file(file_path)
+        init_cls_token_statistic(bart, dic_cls_id, triv_tokenizer, sentences)
     # print('77', bart.decoder.embed_tokens.weight.data[21144])
     loss_fn = CrossEntropyLossWithMask()
     model = HiBart(bart, loss_fn, config).to(device)
@@ -199,6 +246,7 @@ def train(config):
     config['device'] = device
     # 初始化分词器、数据集和模型
     try:
+        config['dataset_dir'] = os.path.join(config['data_dir'], config['dataset'])
         tokenizer = get_tokenizer(config)
         deal_pre_conf(config['model_path'], tokenizer)
         config['eos_id'] = tokenizer.eos_token_id
@@ -223,7 +271,6 @@ def train(config):
         logger.fp.close()
         os.system("rm -rf %s" % OUTPUT_DIR)
         print(traceback.format_exc())
-    
     # 训练模型
     torch.set_printoptions(precision=6)
     try:
