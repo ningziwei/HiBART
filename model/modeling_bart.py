@@ -133,7 +133,6 @@ BART_INPUTS_DOCSTRING = r"""
 
 def invert_mask(attention_mask):
     """Turns 1->0, 0->1, False->True, True-> False"""
-    assert attention_mask.dim() == 2
     return attention_mask.eq(0)
 
 
@@ -791,9 +790,9 @@ class Attention(nn.Module):
                     reshaped = key_padding_mask.unsqueeze(1).unsqueeze(2)
             attn_weights = attn_weights.masked_fill(reshaped, float("-inf"))
             attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
-            if enc_attn is not None:
-                print('793', attn_weights[0])
-                print('794', enc_attn[0])
+            # if enc_attn is not None:
+            #     print('793', attn_weights[0])
+            #     print('794', enc_attn[0])
         if torch.any(torch.isnan(attn_weights)):
             print('modeling_bart 793', attn_weights)
         # print('modeling_bart 794', attn_weights)

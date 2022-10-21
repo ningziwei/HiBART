@@ -119,9 +119,10 @@ class MyTokenizer(BertTokenizer):
         self.dic_all_end_pos_cls = dic_all_end_pos_cls
         
 class DataDealer:
-    def __init__(self, tokenizer, fold=3):
+    def __init__(self, tokenizer, config):
         self.tokenizer = tokenizer
-        if fold==3:
+        self.config = config
+        if config['fold']==3:
             self.get_hier_sent = self.get_three_sent
         else:
             self.get_hier_sent = self.get_two_sent
@@ -192,6 +193,10 @@ class DataDealer:
         '''
         bundles = self.get_hier_sent(sent)
         sent_bund, targ_bund, sent_pos_bund, targ_pos_bund = bundles
+        if self.config['end_self_sup']:
+            '''对完整的目标序列执行一次自编码'''
+            targ_bund.append(sent_bund[-1])
+            targ_pos_bund.append(sent_pos_bund[-1])
         bos_token = self.tokenizer.bos_token
         eos_token = self.tokenizer.eos_token
         sent_bund = [[bos_token]+sent+[eos_token] for sent in sent_bund]

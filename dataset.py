@@ -65,12 +65,13 @@ def collate_fn(batch_data, pad_value=0, device=torch.device("cpu")):
     enc_src_ids, mask = padding(
         [d["enc_src_ids"] for d in batch_data], pad_value)
     padded_batch["enc_src_ids"] = torch.tensor(enc_src_ids, dtype=torch.long, device=device)
-    padded_batch["enc_src_len"] = torch.tensor([d["enc_src_len"] for d in batch_data], device=device)
+    enc_src_len = [d["enc_src_len"] for d in batch_data]
+    padded_batch["enc_src_len"] = torch.tensor(enc_src_len, dtype=torch.long, device=device)
     padded_batch["enc_mask"] = torch.tensor(mask, dtype=torch.bool, device=device)
     enc_attn_mask = get_enc_attn_mask(batch_data[0]['cls_toks_num'], torch.tensor(mask))
     padded_batch["enc_attn_mask"] = torch.tensor(enc_attn_mask, dtype=torch.bool, device=device)
-    print('73', enc_attn_mask[0])
-    print('74', enc_attn_mask[1])
+    # print('73', enc_attn_mask[0])
+    # print('74', enc_attn_mask[1])
     
     for i in range(len(batch_data[0]['dec_src_ids'])):
         dec_src_ids, mask = padding(
@@ -84,8 +85,7 @@ def collate_fn(batch_data, pad_value=0, device=torch.device("cpu")):
         dec_targ_pos, mask = padding(
             [d["dec_targ_pos"][i] for d in batch_data], pad_value)
         padded_batch["dec_targ_pos_bund"].append(torch.tensor(dec_targ_pos, dtype=torch.long, device=device))
-    #     print(padded_batch["dec_src_ids_bund"][-1].shape)
-    # print('dataset 83', len(padded_batch["dec_src_ids_bund"]))
+
     targ_ents = [d["targ_ents"] for d in batch_data]
     padded_batch["targ_ents"] = targ_ents
     return padded_batch
@@ -130,13 +130,14 @@ def get_enc_attn_mask(toks_num, enc_padding_mask):
     '''
     mask = enc_padding_mask.unsqueeze(-1)
     attn_mask = torch.matmul(mask, mask.permute(0,2,1))
-    attn_mask[:,:,1:1+toks_num] = 0
+    attn_mask[:,:,0] = 1
+    attn_mask[:,1:1+toks_num,1:1+toks_num] = 0
     attn_mask[:,range(1,1+toks_num),range(1,1+toks_num)] = 1
     return attn_mask
 
 def flat_sequence(
-    batch_pred, 
-    batch_enc_src_ids, 
+    batch_pred,
+    batch_enc_src_ids,
     batch_dec_src_ids,
     batch_dec_src_pos,
     dic_pos_cls,

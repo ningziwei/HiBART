@@ -157,10 +157,9 @@ class HiBart(nn.Module):
         src_embed = (enc_src_embed + enc_output_mlp)/2
         # src_embed = enc_src_embed
         '''
-        训练过程是batch_size*3*dec_max_len，三条都有用
-        预测过程是batch_size*1*dec_max_len，只有第一条有用
+        训练过程是batch_size*3*dec_max_len，三条都直接用到
+        预测过程是batch_size*1*dec_max_len，只用第一条，后面的边生成边解码
         '''
-
         if dec_targ_pos_bund is not None:
             '''训练过程，三段训练依次进行，各loss求和后一起更新'''
             batch_loss = 0
@@ -188,7 +187,10 @@ class HiBart(nn.Module):
             dic_hir_pos_cls = self.args['dic_hir_pos_cls']
             # print('174', dec_src_ids[0])
             # print('175', dec_src_pos[0])
-            eval_range = range(len(dec_src_ids_bund))
+            if self.args['end_self_sup']:
+                eval_range = range(len(dec_src_ids_bund)-1)
+            else:
+                eval_range = range(len(dec_src_ids_bund))
             for i in eval_range:
                 dec_src_len = dec_padding_mask.sum(dim=-1)
                 logits = self.hi_decoder(

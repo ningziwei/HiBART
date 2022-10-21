@@ -252,7 +252,7 @@ def train(config):
         config['eos_id'] = tokenizer.eos_token_id
         config['pad_value'] = tokenizer.pad_token_id
         config['dic_hir_pos_cls'] = tokenizer.dic_hir_pos_cls
-        data_dealer = DataDealer(tokenizer, fold=config['fold'])
+        data_dealer = DataDealer(tokenizer, config)
         rotate_pos_cls = data_dealer.rotate_pos_cls
         ent_end_pos = list(tokenizer.dic_ent_end_pos_cls.keys())[0]
         loaders = get_data_loader(config, data_dealer)
@@ -281,10 +281,13 @@ def train(config):
         best_epoch = -1
         optimizer.zero_grad()
         step = 0
+        denomin = config['fold']
+        if config['end_self_sup']:
+            denomin += 1
         for epoch in range(config["epochs"]):
             model.train()
             # train_range = get_train_range(epoch, config['fold'])
-            train_range = [epoch%(config['fold']+1)]
+            train_range = [epoch % denomin]
             for batch in train_loader:
                 # print('261 targ_ents')
                 # for k,v in batch.items():
@@ -354,7 +357,7 @@ def predict(config):
     config['eos_id'] = tokenizer.eos_token_id
     config['pad_value'] = tokenizer.pad_token_id
     config['dic_hir_pos_cls'] = tokenizer.dic_hir_pos_cls
-    data_dealer = DataDealer(tokenizer, fold=config['fold'])
+    data_dealer = DataDealer(tokenizer, config)
     rotate_pos_cls = data_dealer.rotate_pos_cls
     ent_end_pos = list(tokenizer.dic_ent_end_pos_cls.keys())[0]
     loaders = get_data_loader(config, data_dealer)
