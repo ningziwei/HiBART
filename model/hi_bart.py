@@ -187,7 +187,7 @@ class HiBart(nn.Module):
             dic_hir_pos_cls = self.args['dic_hir_pos_cls']
             # print('174', dec_src_ids[0])
             # print('175', dec_src_pos[0])
-            if self.args['end_self_sup']:
+            if self.args['targ_self_sup']:
                 eval_range = range(len(dec_src_ids_bund)-1)
             else:
                 eval_range = range(len(dec_src_ids_bund))

@@ -282,7 +282,7 @@ def train(config):
         optimizer.zero_grad()
         step = 0
         denomin = config['fold']
-        if config['end_self_sup']:
+        if config['targ_self_sup']:
             denomin += 1
         for epoch in range(config["epochs"]):
             model.train()

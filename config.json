@@ -15,7 +15,7 @@
     "任务结构参数": 1,
     "statis_init": 1,
     "fold": 3,
-    "end_self_sup": 0,
+    "targ_self_sup": 0,
     "模型参数": 1,
     "static_eos": 1,
     "use_lstm": 0
