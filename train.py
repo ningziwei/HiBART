@@ -226,8 +226,7 @@ def get_train_range(epoch, fold):
     根据epoch生成不同的range
     控制用哪一阶段做训练
     '''
-    if fold==2: return range(2)
-    return range(3)
+    return range(fold+1)
     if epoch<10:
         return [0]
     elif epoch<20:
@@ -272,6 +271,7 @@ def train(config):
         logger.fp.close()
         os.system("rm -rf %s" % OUTPUT_DIR)
         print(traceback.format_exc())
+    
     # 训练模型
     torch.set_printoptions(precision=6)
     try:
@@ -283,7 +283,8 @@ def train(config):
         step = 0
         for epoch in range(config["epochs"]):
             model.train()
-            train_range = get_train_range(epoch, config['fold'])
+            # train_range = get_train_range(epoch, config['fold'])
+            train_range = [epoch%(config['fold']+1)]
             for batch in train_loader:
                 # print('261 targ_ents')
                 # for k,v in batch.items():
@@ -311,14 +312,7 @@ def train(config):
                 accum_loss.append(loss.item())
                 if step % int(config["show_loss_step"]) == 0:
                     # print('train 273', model.encoder.embed_tokens.weight.data[21144][5:10])
-                    # print('train 274', model.encoder.embed_tokens.weight.data[21128][5:10])
-                    # print('train 275', model.encoder.embed_tokens.weight.data[101][5:10])
-                    # print('train 276', model.encoder.embed_tokens.weight.data[3173][5:10])
                     # print('train 273', model.encoder.embed_tokens.weight.data[21144].requires_grad)
-                    # print('train 273', model.encoder.embed_tokens.weight.data[21144][0].requires_grad)
-                    # print('train 274', model.encoder.embed_tokens.weight.data[21128].requires_grad)
-                    # print('train 275', model.encoder.embed_tokens.weight.data[101].requires_grad)
-                    # print('train 276', model.encoder.embed_tokens.weight.data[3173].requires_grad)
                     mean_loss = sum(accum_loss) / len(accum_loss)
                     logger("Epoch %d, step %d / %d, loss = %.4f" % (
                         epoch+1, step, len(train_loader), mean_loss
