@@ -333,7 +333,7 @@ def train(config):
                     accum_loss = []
             epoch_sched.step()
 
-            if epoch>=32:
+            if epoch>=config['start_eval']:
                 valid_metrics = evaluate(
                     model, valid_loader, rotate_pos_cls, ent_end_pos, config['fold'])
                 vep, ver, vef, vep1, ver1, vef1 = [m*100 for m in valid_metrics]

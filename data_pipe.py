@@ -67,6 +67,10 @@ def parse_label(sentences, config, cls_token_path=None):
         cls_tok_dic = {
             lab: [f'<<lab-s>>', f'<<{lab}-e>>'] for lab in classes
         }
+    elif config['cls_type']=='s_e':
+        cls_tok_dic = {
+            lab: [f'<<lab-s>>', f'<<lab-e>>'] for lab in classes
+        }
     
     new_tokens = []
     start_tokens = []

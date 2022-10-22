@@ -1,4 +1,5 @@
 import os
+import sys
 import torch
 
 def test_data_reader():
@@ -174,6 +175,30 @@ def test_get_ents():
     ent_pred = [calib_pred(p, rotate_pos_cls[1], 2) for p in ent_pred]
     print(ent_pred)
 
+class Redirect:
+    content = ""
+    def write(self,str):
+        self.content += str
+    def flush(self):
+        self.content = ""
+
+def test_T5():
+    import utils
+    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+    uer_bart_path = '/data1/nzw/model/bart-base-chinese-cluecorpussmall/'
+    uer_bart = AutoModelForSeq2SeqLM.from_pretrained(uer_bart_path)
+    from model.modeling_bart import BartModel
+    bart_path = "/data1/nzw/model/bart-base-chinese/"
+    bart = BartModel.from_pretrained(bart_path)
+    red = Redirect()
+    sys.stdout = red
+    logger = utils.Logger(open("./log.txt", 'w'))
+    print(uer_bart)
+    logger(red.content)
+    red.flush()
+    print(bart)
+    logger(red.content)
+
 if __name__ == '__main__':
     config_path = 'config.json'
     with open(config_path, encoding="utf-8") as fp:
@@ -182,8 +207,9 @@ if __name__ == '__main__':
     config['dataset_dir'] = os.path.join(config['data_dir'], config['dataset'])
     # test_data_pipe()
     # test_my_tokenizer()
-    test_data_dealer(config)
+    # test_data_dealer(config)
     # test_random_sampler()
     # test_data_loader()
     # test_flat_seq()
     # test_get_ents()
+    test_T5()
