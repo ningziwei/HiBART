@@ -46,11 +46,11 @@ def get_tokenizer(config):
     解析训练集标签，得到模型添加特殊标记的tokenizer
     '''
     dataset_dir = config['dataset_dir']
-    cls_token_path = os.path.join(dataset_dir, 'cls_token.json')
+    cls_token_path = os.path.join(dataset_dir, '{}.json'.format(config['cls_type']))
     if not os.path.exists(cls_token_path):
         file_path = os.path.join(dataset_dir, 'train.train')
         sentences = parse_CoNLL_file(file_path)
-        cls_token_cache = parse_label(sentences, cls_token_path)
+        cls_token_cache = parse_label(sentences, config, cls_token_path)
     else:
         with open(cls_token_path, encoding="utf-8") as fp:
             cls_token_cache = json.load(fp)
@@ -76,7 +76,7 @@ def get_data_loader(config, data_dealer):
         __loader = DataLoader(
             dataset=__dataset, 
             batch_sampler=__sampler, 
-            collate_fn=lambda x: collate_fn(x, pad_value, device))
+            collate_fn=lambda x: collate_fn(x, config))
         return __loader
     
     train_loader = get_loader("train")
@@ -114,6 +114,9 @@ def init_cls_token_statistic(bart, dic_cls_id, triv_tokenizer, sentences):
                 tag = "<<{}-s>>".format(w['tag'][2:])
                 cls_margin_word[tag].append(w['word'])
                 if w_['word']: cls_margin_word[tag].append(w_['word'])
+                tag = "<<lab-s>>"
+                cls_margin_word[tag].append(w['word'])
+                if w_['word']: cls_margin_word[tag].append(w_['word'])
             if w['tag']=='o' and w_['tag'][:2] in ['i-','b-']: 
                 '''实体结束的位置'''
                 tag = "<<{}-e>>".format(w_['tag'][2:])
@@ -123,6 +126,7 @@ def init_cls_token_statistic(bart, dic_cls_id, triv_tokenizer, sentences):
                 cls_margin_word[tag].append(w_['word'])
                 if w['word']: cls_margin_word[tag].append(w['word'])
             w_ = w
+    cls_margin_word['<<lab-e>>'] = cls_margin_word['<<ent_end>>']
     for tok, val in dic_cls_id.items():
         char_idx = triv_tokenizer.convert_tokens_to_ids(
             triv_tokenizer.tokenize(''.join(cls_margin_word[tok]))
@@ -147,7 +151,7 @@ def get_model_optim_sched(config, dic_cls_id):
     model_path = config['model_path']
     bart = BartModel.from_pretrained(model_path).to(device)
     triv_tokenizer = MyTokenizer.from_pretrained(model_path)
-    if not config['statis_init']:
+    if not config['margin_char_init']:
         init_cls_token_triv(bart, dic_cls_id, triv_tokenizer)
     else:
         file_path = os.path.join(config['dataset_dir'], 'train.train')
@@ -194,6 +198,7 @@ def evaluate(model, loader, rotate_pos_cls, ent_end_pos, fold):
                 batch['enc_src_ids'],
                 batch['enc_src_len'],
                 batch['enc_mask'],
+                enc_attn_mask=batch['enc_attn_mask'],
                 dec_src_ids_bund=batch['dec_src_ids_bund'],
                 dec_src_pos_bund=batch['dec_src_pos_bund'],
                 dec_mask_bund=batch['dec_mask_bund']
@@ -218,8 +223,7 @@ def evaluate(model, loader, rotate_pos_cls, ent_end_pos, fold):
             # for p, lab in zip(pred, batch['targ_ents']):
             #     print('163', p, lab)
         model.train()
-        ep, er, ef = utils.micro_metrics(predicts, labels)
-    return ep, er, ef
+    return utils.micro_metrics(predicts, labels)
 
 def get_train_range(epoch, fold):
     '''
@@ -246,7 +250,6 @@ def train(config):
     config['device'] = device
     # 初始化分词器、数据集和模型
     try:
-        config['dataset_dir'] = os.path.join(config['data_dir'], config['dataset'])
         tokenizer = get_tokenizer(config)
         deal_pre_conf(config['model_path'], tokenizer)
         config['eos_id'] = tokenizer.eos_token_id
@@ -284,29 +287,35 @@ def train(config):
         denomin = config['fold']
         if config['targ_self_sup']:
             denomin += 1
+        if config['src_self_sup']:
+            denomin += 1
         for epoch in range(config["epochs"]):
             model.train()
             # train_range = get_train_range(epoch, config['fold'])
-            train_range = [epoch % denomin]
+            stage = epoch % denomin
+            if epoch>84 and stage==denomin-2: continue
             for batch in train_loader:
-                # print('261 targ_ents')
-                # for k,v in batch.items():
-                #     print(k,v[0])
                 step += 1
+                if config['src_self_sup'] and stage==0:
+                    enc_src_ids = batch['txt_ids']
+                    enc_src_len = batch['txt_len']
+                    enc_padding_mask = batch['txt_mask']
+                    enc_attn_mask = None
+                else:
+                    enc_src_ids = batch['enc_src_ids']
+                    enc_src_len = batch['enc_src_len']
+                    enc_padding_mask = batch['enc_mask']
+                    enc_attn_mask = batch['enc_attn_mask']
                 loss, pred = model(
-                    batch['enc_src_ids'],
-                    batch['enc_src_len'],
-                    batch['enc_mask'],
-                    enc_attn_mask=batch['enc_attn_mask'],
+                    enc_src_ids,
+                    enc_src_len,
+                    enc_padding_mask,
+                    enc_attn_mask=enc_attn_mask,
                     dec_src_ids_bund=batch['dec_src_ids_bund'],
                     dec_mask_bund=batch['dec_mask_bund'],
                     dec_targ_pos_bund=batch['dec_targ_pos_bund'],
-                    train_range=train_range
+                    train_range=[stage]
                 )
-                # if (step+1)%70==0:
-                #     for p, lab in zip(pred, batch['targ_ents']):
-                #         p = [x.item() for x in p]
-                #         print('219', p, lab)
                 loss.backward()
                 if step % int(config["grad_accum_step"]) == 0:
                     optimizer.step()
@@ -323,15 +332,17 @@ def train(config):
                     accum_loss = []
             epoch_sched.step()
 
-            if epoch>=20:
+            if epoch>=32:
                 valid_metrics = evaluate(
                     model, valid_loader, rotate_pos_cls, ent_end_pos, config['fold'])
-                vep, ver, vef = [m*100 for m in valid_metrics]
-                logger("Epoch %d, valid entity p = %.2f%%, r = %.2f%%, f = %.2f%%" % (epoch + 1, vep, ver, vef))
+                vep, ver, vef, vep1, ver1, vef1 = [m*100 for m in valid_metrics]
+                logger("Epoch %d, valid entity p=%.2f%%, r=%.2f%%, f=%.2f%%, p=%.2f%%, r=%.2f%%, f=%.2f%%" % (
+                    epoch + 1, vep, ver, vef, vep1, ver1, vef1))
                 test_metrics = evaluate(
                     model, test_loader, rotate_pos_cls, ent_end_pos, config['fold'])
-                tep, ter, tef = [m*100 for m in test_metrics]
-                logger("Epoch %d, test  entity p = %.2f%%, r = %.2f%%, f = %.2f%%" % (epoch + 1, tep, ter, tef))
+                tep, ter, tef, tep1, ter1, tef1 = [m*100 for m in test_metrics]
+                logger("Epoch %d, test entity p=%.2f%%, r=%.2f%%, f=%.2f%%, p=%.2f%%, r=%.2f%%, f=%.2f%%" % (
+                    epoch + 1, tep, ter, tef, tep1, ter1, tef1))
                 if tef > best_f1:
                     best_f1 = tef
                     best_epoch = epoch
@@ -349,7 +360,7 @@ def train(config):
         print(traceback.format_exc())
 
 def predict(config):
-    state_dict_path = 'HiBart_202210121512//snapshot.model'
+    state_dict_path = 'HiBart_1021_f3_targ_self_sup_best//snapshot.model'
     state_dict_path = os.path.join(config["output_path"], state_dict_path)
     config['device'] = device
     # 初始化分词器、数据集和模型
@@ -368,20 +379,24 @@ def predict(config):
     model.load_state_dict(torch.load(state_dict_path))
     valid_metrics = evaluate(
         model, valid_loader, rotate_pos_cls, ent_end_pos, config['fold'])
-    vep, ver, vef = [m*100 for m in valid_metrics]
-    print("Epoch %d, valid entity p = %.2f%%, r = %.2f%%, f = %.2f%%" % (1, vep, ver, vef))
+    vep, ver, vef, vep1, ver1, vef1 = [m*100 for m in valid_metrics]
+    print("valid entity p=%.2f%%, r=%.2f%%, f=%.2f%%, p=%.2f%%, r=%.2f%%, f=%.2f%%" % (
+        vep, ver, vef, vep1, ver1, vef1))
     test_metrics = evaluate(
         model, test_loader, rotate_pos_cls, ent_end_pos, config['fold'])
-    tep, ter, tef = [m*100 for m in test_metrics]
-    print("Epoch %d, test  entity p = %.2f%%, r = %.2f%%, f = %.2f%%" % (1, tep, ter, tef))
+    tep, ter, tef, tep1, ter1, tef1 = [m*100 for m in test_metrics]
+    print("test entity p=%.2f%%, r=%.2f%%, f=%.2f%%, p=%.2f%%, r=%.2f%%, f=%.2f%%" % (
+        tep, ter, tef, tep1, ter1, tef1))
 
     
 
 if __name__=='__main__':
+
     config_path = 'config.json'
     with open(config_path, encoding="utf-8") as fp:
         config = json.load(fp)
     config['config_path'] = config_path
+    config['dataset_dir'] = os.path.join(config['data_dir'], config['dataset'])
     torch.autograd.set_detect_anomaly(True)
     with torch.autograd.detect_anomaly():
         train(config)

@@ -189,6 +189,8 @@ class HiBart(nn.Module):
             # print('175', dec_src_pos[0])
             if self.args['targ_self_sup']:
                 eval_range = range(len(dec_src_ids_bund)-1)
+            elif self.args['src_self_sup']:
+                eval_range = range(1, len(dec_src_ids_bund)-1)
             else:
                 eval_range = range(len(dec_src_ids_bund))
             for i in eval_range:

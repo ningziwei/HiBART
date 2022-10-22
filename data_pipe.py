@@ -44,7 +44,7 @@ def parse_CoNLL_file(filename):
     sentences = [s for s in sentences if len(s)]
     return sentences
 
-def parse_label(sentences, cls_token_path=None, ent_end_tok='<<ent_end>>'):
+def parse_label(sentences, config, cls_token_path=None):
     '''
     得到实体抽取数据集的所有标签和实体类别
     new_tokens_bundle: [
@@ -59,17 +59,27 @@ def parse_label(sentences, cls_token_path=None, ent_end_tok='<<ent_end>>'):
             label_dic[s['tag']] = True
     classes = [
         lab[2:] for lab in label_dic if '-' in lab]
-    cls_tok_dic = {
-        lab: [f'<<{lab}-s>>', f'<<{lab}-e>>'] for lab in classes
-    }
+    if config['cls_type']=='cls_e_cls':
+        cls_tok_dic = {
+            lab: [f'<<{lab}-s>>', f'<<{lab}-e>>'] for lab in classes
+        }
+    elif config['cls_type']=='s_e_cls':
+        cls_tok_dic = {
+            lab: [f'<<lab-s>>', f'<<{lab}-e>>'] for lab in classes
+        }
+    
     new_tokens = []
     start_tokens = []
     end_tokens = []
+    ent_end_tok='<<ent_end>>'
     ent_end_token = [ent_end_tok]
     for _, v in cls_tok_dic.items():
         new_tokens += v
         start_tokens.append(v[0])
         end_tokens.append(v[1])
+    new_tokens = list(set(new_tokens))
+    start_tokens = list(set(start_tokens))
+    end_tokens = list(set(end_tokens))
     new_tokens.append(ent_end_tok)
     cls_token_cache = {
         'cls_tok_dic': cls_tok_dic,
@@ -197,6 +207,13 @@ class DataDealer:
             '''对完整的目标序列执行一次自编码'''
             targ_bund.append(sent_bund[-1])
             targ_pos_bund.append(sent_pos_bund[-1])
+        if self.config['src_self_sup']:
+            '''对不带特殊标记的句子序列执行一次自编码'''
+            cls_toks_num = len(self.tokenizer.dic_cls_id)
+            targ_bund = [sent_bund[0]] + targ_bund
+            src_pos = [p-cls_toks_num for p in sent_pos_bund[0]]
+            targ_pos_bund = [src_pos] + targ_bund
+
         bos_token = self.tokenizer.bos_token
         eos_token = self.tokenizer.eos_token
         sent_bund = [[bos_token]+sent+[eos_token] for sent in sent_bund]
@@ -215,6 +232,7 @@ class DataDealer:
             targ_ids_bund, targ_pos_bund)
         '''在编码器的输入序列中添加表示实体的特殊标记'''
         src_toks = sent_bund[0]
+        txt_ids = [self.tokens_to_ids(tk) for tk in src_toks]
         cls_toks = list(self.tokenizer.dic_cls_id.keys())
         src_toks = [src_toks[0]] + cls_toks + src_toks[1:]
         enc_src_ids = [self.tokens_to_ids(tk) for tk in src_toks]
@@ -224,6 +242,8 @@ class DataDealer:
             'raw_chars': sent_bund[0],
             'src_toks': src_toks,
             'targ_toks': sent_bund[-1],
+            'txt_ids': txt_ids,
+            'txt_len': len(txt_ids),
             'enc_src_ids': enc_src_ids,
             'enc_src_len': len(enc_src_ids),
             'dec_src_ids': dec_src_ids,
@@ -340,7 +360,6 @@ class DataDealer:
             sent_bund, targ_bund, sent_pos_bund, targ_pos_bund)):
             # print('data_pipe 329', sent, targ)
             if not len(targ) or targ[0] not in dic_cls_pos:
-                # print('330', targ)
                 targ_bund[i] = [sent[0]] + targ
                 targ_pos_bund[i] = [sent_pos[0]] + targ_pos
         return sent_bund, targ_bund, sent_pos_bund, targ_pos_bund

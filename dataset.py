@@ -59,19 +59,31 @@ class GroupBatchRandomSampler(Sampler):
     def __len__(self):
         return len(self.batch_indices)
 
-def collate_fn(batch_data, pad_value=0, device=torch.device("cpu")):
+def collate_fn(batch_data, config):
     '''根据batch结果实时生成模型的输入数据，避免内存压力太大'''
+    pad_value = config['pad_value']
+    device = config['device']
     padded_batch = defaultdict(list)
+
+    if config['src_self_sup']:
+        txt_ids, mask = padding(
+            [d["txt_ids"] for d in batch_data], pad_value)
+        padded_batch["txt_ids"] = torch.tensor(txt_ids, dtype=torch.long, device=device)
+        txt_len = [d["txt_len"] for d in batch_data]
+        padded_batch["txt_len"] = torch.tensor(txt_len, dtype=torch.long, device=device)
+        padded_batch["txt_mask"] = torch.tensor(mask, dtype=torch.bool, device=device)
+
     enc_src_ids, mask = padding(
         [d["enc_src_ids"] for d in batch_data], pad_value)
     padded_batch["enc_src_ids"] = torch.tensor(enc_src_ids, dtype=torch.long, device=device)
     enc_src_len = [d["enc_src_len"] for d in batch_data]
     padded_batch["enc_src_len"] = torch.tensor(enc_src_len, dtype=torch.long, device=device)
     padded_batch["enc_mask"] = torch.tensor(mask, dtype=torch.bool, device=device)
-    enc_attn_mask = get_enc_attn_mask(batch_data[0]['cls_toks_num'], torch.tensor(mask))
-    padded_batch["enc_attn_mask"] = torch.tensor(enc_attn_mask, dtype=torch.bool, device=device)
-    # print('73', enc_attn_mask[0])
-    # print('74', enc_attn_mask[1])
+    if config['enc_attn_mask']:
+        enc_attn_mask = get_enc_attn_mask(batch_data[0]['cls_toks_num'], torch.tensor(mask))
+        padded_batch["enc_attn_mask"] = torch.tensor(enc_attn_mask, dtype=torch.bool, device=device)
+    else:
+        padded_batch["enc_attn_mask"] = None
     
     for i in range(len(batch_data[0]['dec_src_ids'])):
         dec_src_ids, mask = padding(

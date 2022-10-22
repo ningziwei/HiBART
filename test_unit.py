@@ -1,3 +1,5 @@
+import os
+import torch
 
 def test_data_reader():
     from data_pipe import DataReader
@@ -28,12 +30,12 @@ def test_my_tokenizer():
     print(my_tknzr.dic_cls_order)
     print(my_tknzr.dic_hir_pos_cls)
 
-def test_data_dealer():
+def test_data_dealer(config):
     from data_pipe import parse_CoNLL_file, parse_label
     from data_pipe import MyTokenizer, DataDealer
     file_path = '/data1/nzw/CNER/weibo_conll/train.train'
     sentences = parse_CoNLL_file(file_path)
-    cls_token_cache = parse_label(sentences)
+    cls_token_cache = parse_label(sentences, config)
     cls_tok_dic = cls_token_cache['cls_tok_dic']
     new_tokens_bundle = cls_token_cache['new_tokens_bundle']
 
@@ -41,7 +43,7 @@ def test_data_dealer():
     my_tknzr = MyTokenizer.from_pretrained(model_path)
     my_tknzr.add_special_tokens(cls_tok_dic, new_tokens_bundle)
     
-    data_dealer = DataDealer(my_tknzr)
+    data_dealer = DataDealer(my_tknzr, config)
     # sent = sentences[0]
     # sent = [
     #     {'word':'感','tag':'o'},{'word':'动','tag':'o'},
@@ -57,9 +59,9 @@ def test_data_dealer():
         {'word':'中','tag':'b-loc.nam'},{'word':'国','tag':'i-loc.nam'},
         {'word':'人','tag':'b-per.nam'},{'word':'物','tag':'i-per.nam'},
         ]
-    sent = [{'word':'感','tag':'o'}]
+    # sent = [{'word':'感','tag':'o'}]
     res = data_dealer.get_hier_sent(sent)
-    print(res[0])
+    print('64', res[0])
     print(res[1])
     # for s, t in zip(res[0], res[1]):
     #     print(s)
@@ -67,8 +69,8 @@ def test_data_dealer():
     # print('55', res[0][3])
     # ents = data_dealer.get_targ_ents(res[2][-1])
     # print('实体', ents)
-    # samp = data_dealer.get_one_sample(sent)
-    # print(samp)
+    samp = data_dealer.get_one_sample(sent)
+    print('73', samp)
     # for sent in data_reader.sentences:
     #     data_dealer.get_one_sample(sent)
 
@@ -104,7 +106,6 @@ def test_data_loader():
     for i,batch in enumerate(loaders[1]):
         print(i, batch['dec_src_ids'].shape)
 
-import torch
 from data_pipe import *  
 def test_flat_seq():
     batch_pred_list = [
@@ -174,10 +175,15 @@ def test_get_ents():
     print(ent_pred)
 
 if __name__ == '__main__':
+    config_path = 'config.json'
+    with open(config_path, encoding="utf-8") as fp:
+        config = json.load(fp)
+    config['config_path'] = config_path
+    config['dataset_dir'] = os.path.join(config['data_dir'], config['dataset'])
     # test_data_pipe()
     # test_my_tokenizer()
-    # test_data_dealer()
+    test_data_dealer(config)
     # test_random_sampler()
     # test_data_loader()
     # test_flat_seq()
-    test_get_ents()
+    # test_get_ents()
