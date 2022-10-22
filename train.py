@@ -243,6 +243,7 @@ def get_train_range(epoch, fold):
 def deal_pre_conf(model_path, tokenizer):
     pre_conf = PretrainedConfig.from_pretrained(model_path)
     pre_conf.tag_num = len(tokenizer.dic_cls_id)
+    pre_conf.tag_num = 0
     pre_conf.save_pretrained(model_path)
 
 def train(config):
@@ -293,7 +294,7 @@ def train(config):
             model.train()
             # train_range = get_train_range(epoch, config['fold'])
             stage = epoch % denomin
-            if epoch>84 and stage==denomin-2: continue
+            # if epoch>84 and stage==denomin-2: continue
             for batch in train_loader:
                 step += 1
                 if config['src_self_sup'] and stage==0:

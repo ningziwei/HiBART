@@ -210,9 +210,14 @@ class DataDealer:
         if self.config['src_self_sup']:
             '''对不带特殊标记的句子序列执行一次自编码'''
             cls_toks_num = len(self.tokenizer.dic_cls_id)
+            txt_pos = [p-cls_toks_num for p in sent_pos_bund[0]]
+            sent_bund = [sent_bund[0]] + sent_bund
+            sent_pos_bund = [txt_pos] + sent_pos_bund
             targ_bund = [sent_bund[0]] + targ_bund
-            src_pos = [p-cls_toks_num for p in sent_pos_bund[0]]
-            targ_pos_bund = [src_pos] + targ_bund
+            targ_pos_bund = [txt_pos] + targ_pos_bund
+        # print('217', sent_bund)
+        # print('218', targ_bund)
+        # print(targ_pos_bund)
 
         bos_token = self.tokenizer.bos_token
         eos_token = self.tokenizer.eos_token

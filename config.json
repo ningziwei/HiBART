@@ -17,7 +17,7 @@
     "margin_char_init": 1,
     "cls_type": "s_e_cls",
     "targ_self_sup": 1,
-    "src_self_sup": 0,
+    "src_self_sup": 1,
     "模型参数": 1,
     "static_eos": 1,
     "enc_attn_mask": 1,

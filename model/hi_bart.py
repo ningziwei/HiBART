@@ -187,12 +187,15 @@ class HiBart(nn.Module):
             dic_hir_pos_cls = self.args['dic_hir_pos_cls']
             # print('174', dec_src_ids[0])
             # print('175', dec_src_pos[0])
+            eval_num = len(dec_src_ids_bund)
             if self.args['targ_self_sup']:
-                eval_range = range(len(dec_src_ids_bund)-1)
-            elif self.args['src_self_sup']:
-                eval_range = range(1, len(dec_src_ids_bund)-1)
-            else:
-                eval_range = range(len(dec_src_ids_bund))
+                eval_num -= 1
+            if self.args['src_self_sup']:
+                eval_num -= 1
+                dec_src_ids = dec_src_ids_bund[1]
+                dec_src_pos = dec_src_pos_bund[1]
+                dec_padding_mask = dec_mask_bund[1]
+            eval_range = range(eval_num)
             for i in eval_range:
                 dec_src_len = dec_padding_mask.sum(dim=-1)
                 logits = self.hi_decoder(

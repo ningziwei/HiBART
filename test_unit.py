@@ -61,8 +61,8 @@ def test_data_dealer(config):
         ]
     # sent = [{'word':'感','tag':'o'}]
     res = data_dealer.get_hier_sent(sent)
-    print('64', res[0])
-    print(res[1])
+    # print('64', res[0])
+    # print(res[1])
     # for s, t in zip(res[0], res[1]):
     #     print(s)
     #     print(t)
