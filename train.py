@@ -63,9 +63,6 @@ def get_tokenizer(config):
 
 def get_data_loader(config, data_dealer):
     '''得到三个数据集的dataloader'''
-    device = config['device']
-    pad_value = config['pad_value']
-
     def get_loader(subset):
         file_path = os.path.join(config['dataset_dir'], f'{subset}.{subset}')
         sentences = parse_CoNLL_file(file_path)
@@ -188,7 +185,9 @@ def calib_pred(preds, end_pos, fold):
                     if new_ent[j]-new_ent[j-1]!=1:
                         # new_preds[-1] = ent[j:i+2]
                         new_preds = new_preds[:-1]
-                        print('train 190', ent)
+                        new_preds.append(ent[j+1:i+fold-1])
+                        # print('train 190', ent)
+                        # print('train 191', ent[j+1:i+fold-1])
                         # print(ent[j+1:i+2])
                         break
                 break
@@ -222,12 +221,6 @@ def evaluate(model, loader, rotate_pos_cls, ent_end_pos, fold):
 
             predicts += ent_pred
             labels += batch['targ_ents']
-            # print('train 194')
-            # print(pred[0])
-            # print(ent_pred[0])
-            # print(batch['targ_ents'][0])
-            # for p, lab in zip(pred, batch['targ_ents']):
-            #     print('163', p, lab)
         model.train()
     return utils.micro_metrics(predicts, labels)
 
@@ -405,7 +398,7 @@ if __name__=='__main__':
         config = json.load(fp)
     config['config_path'] = config_path
     config['dataset_dir'] = os.path.join(config['data_dir'], config['dataset'])
-    # torch.autograd.set_detect_anomaly(True)
-    # with torch.autograd.detect_anomaly():
-    #     train(config)
-    predict(config)
+    torch.autograd.set_detect_anomaly(True)
+    with torch.autograd.detect_anomaly():
+        train(config)
+    # predict(config)
