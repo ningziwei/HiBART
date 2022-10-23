@@ -40,33 +40,16 @@ class HiDecoder(nn.Module):
         
         # 用双向lstm处理decoder的输出向量
         if self.args['use_lstm']:
-            # s1 = dec_output.shape
             packed_embs = pack_padded_sequence(
                 dec_output, dec_src_len.cpu(), batch_first=True, enforce_sorted=False)
             lstm_out, (_, _) = self.lstm(packed_embs)
             lstm_out, _ = pad_packed_sequence(lstm_out, batch_first=True)
             dec_output = self.dropout_layer(lstm_out)
 
-            # if s1!=dec_output.shape:
-            #     print('dec_src_len', dec_src_len)
-            #     print('hi_bart 50', s1)
-            #     print('hi_bart 51', dec_output.shape)
         # 初始化预测结果，bsz*dec_out_max_len*enc_out_max_len
         logits = dec_output.new_full(
             list(dec_output.size()[:2])+[enc_output.size(1)],
             fill_value=-1e32)
-        
-        # if self.args['static_eos']:
-        #     # 静态结束符，用词表中的结束符嵌入向量作为目标
-        #     eos_id = self.args['eos_id']
-        #     eos_emb = self.decoder.embed_tokens.weight[eos_id:eos_id+1]
-        #     eos_scores = F.linear(hidden_state, self.dropout_layer(eos_emb))
-        # else:
-        #     # 动态结束符，用结束符的编码向量作为目标
-        #     eos_emb = enc_output[range(len(enc_output)), enc_src_len-1, :]
-        #     eos_emb = eos_emb.unsqueeze(1)
-        #     # print('57', hidden_state.shape, eos_emb.shape)
-        #     eos_scores = torch.bmm(hidden_state, eos_emb.permute(0,2,1))
         
         # enc_src_embed = self.decoder.embed_tokens(enc_src_ids)
         # enc_src_embed = self.dropout_layer(enc_src_embed)

@@ -11,7 +11,6 @@ from transformers import get_linear_schedule_with_warmup
 import utils
 from data_pipe import *
 from dataset import *
-from model.modeling_bart import BartModel
 # from transformers import BartModel
 from model.hi_bart import HiBart
 from model.losses import CrossEntropyLossWithMask
@@ -149,7 +148,14 @@ def get_model_optim_sched(config, dic_cls_id):
     '''初始化模型、优化器、学习率函数'''
     device = config['device']
     model_path = config['model_path']
-    bart = BartModel.from_pretrained(model_path).to(device)
+    if 'bart-base-chinese-cluecorpussmall' in model_path:
+        from model.modeling_bart import BartModel
+        # from transformers import BartModel
+        bart = BartModel.from_pretrained(model_path).to(device)
+    else:
+        from model.modeling_bart import BartModel
+        bart = BartModel.from_pretrained(model_path).to(device)
+
     triv_tokenizer = MyTokenizer.from_pretrained(model_path)
     if not config['margin_char_init']:
         init_cls_token_triv(bart, dic_cls_id, triv_tokenizer)
@@ -182,7 +188,7 @@ def calib_pred(preds, end_pos, fold):
                     if new_ent[j]-new_ent[j-1]!=1:
                         # new_preds[-1] = ent[j:i+2]
                         new_preds = new_preds[:-1]
-                        # print('159', ent)
+                        print('train 190', ent)
                         # print(ent[j+1:i+2])
                         break
                 break
@@ -353,6 +359,7 @@ def train(config):
         logger.fp.close()
     except KeyboardInterrupt:
         logger("Interrupted.")
+        logger("Best epoch %d, best entity f1: %.2f%%" % (best_epoch+1, best_f1))
         logger.fp.close()
     except Exception as e:
         import traceback
@@ -361,7 +368,7 @@ def train(config):
         print(traceback.format_exc())
 
 def predict(config):
-    state_dict_path = 'HiBart_1021_f3_targ_self_sup_best//snapshot.model'
+    state_dict_path = 'HiBart_1023 weibo no_retok//snapshot.model'
     state_dict_path = os.path.join(config["output_path"], state_dict_path)
     config['device'] = device
     # 初始化分词器、数据集和模型
@@ -398,7 +405,7 @@ if __name__=='__main__':
         config = json.load(fp)
     config['config_path'] = config_path
     config['dataset_dir'] = os.path.join(config['data_dir'], config['dataset'])
-    torch.autograd.set_detect_anomaly(True)
-    with torch.autograd.detect_anomaly():
-        train(config)
-    # predict(config)
+    # torch.autograd.set_detect_anomaly(True)
+    # with torch.autograd.detect_anomaly():
+    #     train(config)
+    predict(config)

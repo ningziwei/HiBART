@@ -16,20 +16,23 @@ def test_data_reader():
         for targ in targ_bund:
             print(''.join(targ))
 
-def test_my_tokenizer():
+def test_my_tokenizer(config):
     from data_pipe import parse_CoNLL_file, parse_label, MyTokenizer
     file_path = '/data1/nzw/CNER/weibo_conll/test.test'
     sentences = parse_CoNLL_file(file_path)
-    cls_token_cache = parse_label(sentences)
+    cls_token_cache = parse_label(sentences, config)
     cls_tok_dic = cls_token_cache['cls_tok_dic']
     new_tokens_bundle = cls_token_cache['new_tokens_bundle']
 
     model_path = '/data1/nzw/model/bart-base-chinese/'
     my_tknzr = MyTokenizer.from_pretrained(model_path)
     my_tknzr.add_special_tokens(cls_tok_dic, new_tokens_bundle)
-    print(my_tknzr.dic_cls_id)
-    print(my_tknzr.dic_cls_order)
-    print(my_tknzr.dic_hir_pos_cls)
+    txt = '我有一个小毛驴 \t我从来也不骑'
+    print(my_tknzr.tokenize(txt))
+    print(my_tknzr(txt))
+    # print(my_tknzr.dic_cls_id)
+    # print(my_tknzr.dic_cls_order)
+    # print(my_tknzr.dic_hir_pos_cls)
 
 def test_data_dealer(config):
     from data_pipe import parse_CoNLL_file, parse_label
@@ -199,6 +202,7 @@ def test_T5():
     print(bart)
     logger(red.content)
 
+
 if __name__ == '__main__':
     config_path = 'config.json'
     with open(config_path, encoding="utf-8") as fp:
@@ -206,10 +210,10 @@ if __name__ == '__main__':
     config['config_path'] = config_path
     config['dataset_dir'] = os.path.join(config['data_dir'], config['dataset'])
     # test_data_pipe()
-    # test_my_tokenizer()
+    test_my_tokenizer(config)
     # test_data_dealer(config)
     # test_random_sampler()
     # test_data_loader()
     # test_flat_seq()
     # test_get_ents()
-    test_T5()
+    # test_T5()

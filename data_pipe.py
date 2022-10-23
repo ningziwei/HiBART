@@ -1,7 +1,8 @@
 
 import json
 import torch
-# from transformers import BartTokenizer
+import opencc
+# from transformers import BertTokenizer
 from model.tokenizer_full import BertTokenizer
 
 def parse_CoNLL_file(filename):
@@ -40,7 +41,7 @@ def parse_CoNLL_file(filename):
         if line_strlist[0] != "-DOCSTART-":
             word = line_strlist[0]
             tag = line_strlist[-1].lower()
-            sentences[-1].append({'word':word, 'tag':tag})
+            sentences[-1].append({'word':word.lower(), 'tag':tag})
     sentences = [s for s in sentences if len(s)]
     return sentences
 
@@ -136,6 +137,7 @@ class DataDealer:
     def __init__(self, tokenizer, config):
         self.tokenizer = tokenizer
         self.config = config
+        self.cc = opencc.OpenCC('t2s')
         if config['fold']==3:
             self.get_hier_sent = self.get_three_sent
         else:
@@ -146,6 +148,36 @@ class DataDealer:
         rotate_pos_cls.append(tokenizer.dic_start_pos_cls)
         rotate_pos_cls.append(tokenizer.dic_all_end_pos_cls)
         self.rotate_pos_cls = rotate_pos_cls
+
+    def re_tokenize(self, sent):
+        '''
+        用tokenizer对文本重新分词，得到新的标注序列
+        '''
+        tokenizer = self.tokenizer
+        txt = ''.join([w['word'] for w in sent])
+        txt = self.cc.convert(txt)
+        tokens = tokenizer.tokenize(txt)
+
+        for i in range(1,len(sent)-1):
+            if sent[i]['tag'][:2]=='i-' and sent[i-1]['tag']=='o':
+                sent[i]['tag'] = sent[i]['tag'].replace('i-', 'b-')
+                print('data_pipe 164', txt)
+        p = 0
+        new_sent = []
+        for tok in tokens:
+            new_sent.append({'word':tok, 'tag':sent[p]['tag']})
+            p += len(tok)
+            if tok.startswith('##'): p -= 2
+            if tok=='[UNK]': p -= 4
+        # for i in range(1,len(new_sent)-1):
+        #     if new_sent[i]['tag'][:2]=='i-' and new_sent[i-1]['tag']=='o':
+        #         print('162 False and Error')
+        #         print(txt)
+        #         print(tokens)
+        #         print([list(n.values()) for n in sent])
+        #         print([list(n.values()) for n in new_sent])
+        #         break
+        return new_sent
 
     def get_one_sample(self, sent):
         '''
@@ -205,6 +237,8 @@ class DataDealer:
             'targ_ents': [[10, 21, 22, 18, 11]]
         }
         '''
+        if self.config['re_tokenize']:
+            sent = self.re_tokenize(sent)
         bundles = self.get_hier_sent(sent)
         sent_bund, targ_bund, sent_pos_bund, targ_pos_bund = bundles
         if self.config['targ_self_sup']:
@@ -367,7 +401,6 @@ class DataDealer:
         '''将特殊标记添加到输入句子的前面'''
         for i, (sent, targ, sent_pos, targ_pos) in enumerate(zip(
             sent_bund, targ_bund, sent_pos_bund, targ_pos_bund)):
-            # print('data_pipe 329', sent, targ)
             if not len(targ) or targ[0] not in dic_cls_pos:
                 targ_bund[i] = [sent[0]] + targ
                 targ_pos_bund[i] = [sent_pos[0]] + targ_pos
