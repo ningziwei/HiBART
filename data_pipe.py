@@ -177,6 +177,11 @@ class DataDealer:
         #         print([list(n.values()) for n in sent])
         #         print([list(n.values()) for n in new_sent])
         #         break
+        # print('data_pipe 180')
+        # print(txt)
+        # print(tokens)
+        # print([list(n.values()) for n in sent])
+        # print([list(n.values()) for n in new_sent])
         return new_sent
 
     def get_one_sample(self, sent):

@@ -27,8 +27,8 @@ def get_logger_dir(config):
         OUTPUT_DIR: 模型存储路径
     '''
     output_path = config["output_path"]
-    prefix = config.get("prefix", "HiBart") + '_'
-    curr_time = time.strftime("%Y%m%d%H%M", time.localtime())
+    prefix = config['dataset'].split('_')[0]+'_'
+    curr_time = time.strftime("%m%d%H%M", time.localtime())
     OUTPUT_DIR = os.path.join(output_path, prefix + curr_time)
     if os.path.exists(OUTPUT_DIR):
         os.system("rm -rf %s" % OUTPUT_DIR)
@@ -173,7 +173,7 @@ def get_model_optim_sched(config, dic_cls_id):
         optimizer, config["scheduler_step"], gamma=0.1)
     return model, optimizer, batch_sched, epoch_sched
 
-def calib_pred(preds, end_pos, fold):
+def calib_pred(preds, end_pos, fold, targ=None):
     '''矫正解码的错误'''
     new_preds = []
     for ent in preds:
@@ -183,12 +183,13 @@ def calib_pred(preds, end_pos, fold):
                 new_ent = ent[1:i]
                 for j in range(1,len(new_ent)):
                     if new_ent[j]-new_ent[j-1]!=1:
-                        # new_preds[-1] = ent[j:i+2]
                         new_preds = new_preds[:-1]
                         new_preds.append(ent[j+1:i+fold-1])
+                        # '''只计算开始位置的正确率'''
+                        # new_preds.append(ent[:2])
+                        # new_preds.append(ent[j+1:j+3])
                         # print('train 190', ent)
-                        # print('train 191', ent[j+1:i+fold-1])
-                        # print(ent[j+1:i+2])
+                        # print('targ', targ)
                         break
                 break
     return new_preds
@@ -217,7 +218,8 @@ def evaluate(model, loader, rotate_pos_cls, ent_end_pos, fold):
                 get_ents = get_targ_ents_3
                 end_pos = [ent_end_pos]
             ent_pred = [get_ents(p, rotate_pos_cls, ent_end_pos) for p in pred]
-            ent_pred = [calib_pred(p, end_pos, fold) for p in ent_pred]
+            # ent_pred = [calib_pred(p, end_pos, fold) for p in ent_pred]
+            ent_pred = [calib_pred(p, end_pos, fold, targ) for p, targ in zip(ent_pred,batch['targ_ents'])]
 
             predicts += ent_pred
             labels += batch['targ_ents']
@@ -317,6 +319,7 @@ def train(config):
                     train_range=[stage]
                 )
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
                 if step % int(config["grad_accum_step"]) == 0:
                     optimizer.step()
                     batch_sched.step()
@@ -361,8 +364,6 @@ def train(config):
         print(traceback.format_exc())
 
 def predict(config):
-    state_dict_path = 'HiBart_1023 weibo no_retok//snapshot.model'
-    state_dict_path = os.path.join(config["output_path"], state_dict_path)
     config['device'] = device
     # 初始化分词器、数据集和模型
     tokenizer = get_tokenizer(config)
@@ -377,6 +378,7 @@ def predict(config):
     config["total_steps"] = config["epochs"] * len(train_loader)
     model = get_model_optim_sched(config, tokenizer.dic_cls_id)[0]
 
+    state_dict_path = os.path.join(config["saved_path"], 'snapshot.model')
     model.load_state_dict(torch.load(state_dict_path))
     valid_metrics = evaluate(
         model, valid_loader, rotate_pos_cls, ent_end_pos, config['fold'])
@@ -390,15 +392,25 @@ def predict(config):
         tep, ter, tef, tep1, ter1, tef1))
 
     
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('--test', default=0, type=int, choices=[0,1])
+par_args = parser.parse_args()
 
 if __name__=='__main__':
-
-    config_path = 'config.json'
-    with open(config_path, encoding="utf-8") as fp:
-        config = json.load(fp)
-    config['config_path'] = config_path
-    config['dataset_dir'] = os.path.join(config['data_dir'], config['dataset'])
-    torch.autograd.set_detect_anomaly(True)
-    with torch.autograd.detect_anomaly():
-        train(config)
-    # predict(config)
+    if not par_args.test:
+        config_path = 'config.json'
+        with open(config_path, encoding="utf-8") as fp: config = json.load(fp)
+        config['config_path'] = config_path
+        config['dataset_dir'] = os.path.join(config['data_dir'], config['dataset'])
+        torch.autograd.set_detect_anomaly(True)
+        with torch.autograd.detect_anomaly():
+            train(config)
+    else:
+        saved_path = "/data1/nzw/model_saved/HiBart/weibo_10241351"
+        config_path = os.path.join(saved_path, 'config.json')
+        with open(config_path, encoding="utf-8") as fp: config = json.load(fp)
+        config['saved_path'] = saved_path
+        config['config_path'] = config_path
+        config['dataset_dir'] = os.path.join(config['data_dir'], config['dataset'])
+        predict(config)
